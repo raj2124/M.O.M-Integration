@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "dev:watch": "node --watch --watch-path=src --watch-path=public src/server.js"
+    "dev:watch": "node --watch --watch-path=src --watch-path=public src/server.js",
+    "test:smoke": "node scripts/smoke-test.js"
   },
   "dependencies": {
     "axios": "^1.7.9",

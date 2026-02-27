@@ -32,12 +32,6 @@
         </div>
       </header>
 
-      <nav class="app-nav animate-in">
-        <button id="navDashboardBtn" class="nav-chip nav-chip-active" type="button">Dashboard</button>
-        <button id="navEditorBtn" class="nav-chip" type="button">M.O.M Editor</button>
-        <button id="startNewMomBtn" class="btn btn-primary" type="button">+ New M.O.M Sheet</button>
-      </nav>
-
       <section id="dashboardView" class="view view-active">
         <section class="dashboard-hero animate-in">
           <div>
@@ -47,6 +41,18 @@
               Manage your meeting records with branded, standardized M.O.M sheets connected to Zoho Projects.
             </p>
             <button id="startNewMomHeroBtn" class="btn btn-primary" type="button">Start New M.O.M</button>
+          </div>
+          <div class="hero-shapes" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
           </div>
           <div class="hero-mark" aria-hidden="true"></div>
         </section>
@@ -76,6 +82,14 @@
             <h2>Recent Zoho Projects (Added / Modified)</h2>
           </div>
           <p id="zohoListStatus" class="zoho-list-status">Loading projects...</p>
+          <div class="status-legend" aria-label="Status Color Guide">
+            <span class="status-chip tone-active"><i></i>Active</span>
+            <span class="status-chip tone-planning"><i></i>Planning</span>
+            <span class="status-chip tone-review"><i></i>Client Review</span>
+            <span class="status-chip tone-hold"><i></i>On Hold</span>
+            <span class="status-chip tone-complete"><i></i>Completed</span>
+            <span class="status-chip tone-cancelled"><i></i>Cancelled</span>
+          </div>
           <div id="dashboardRecentProjects" class="recent-project-grid"></div>
         </section>
 
@@ -83,8 +97,8 @@
           <h2>Workflow</h2>
           <ol>
             <li>Click <strong>New M.O.M Sheet</strong>.</li>
-            <li>Choose source: <strong>Manual Entry</strong> or <strong>From Zoho Projects</strong>.</li>
-            <li>Fill meeting details, minutes, agenda, and attendees.</li>
+            <li>Select project from the <strong>Zoho Project</strong> dropdown in General Information.</li>
+            <li>Fill client name manually, then complete meeting details, agenda, and attendees.</li>
             <li>Submit with one or more options: email, PDF, print.</li>
           </ol>
         </section>
@@ -114,10 +128,32 @@
                   <option value="">Select a Zoho project</option>
                 </select>
               </label>
+              <div id="zohoProjectMeta" class="zoho-project-meta hidden" aria-live="polite">
+                <div class="meta-item">
+                  <span>Owner</span>
+                  <strong id="zohoMetaOwner">-</strong>
+                </div>
+                <div id="zohoMetaStatusWrap" class="meta-item status-item tone-default">
+                  <span>Status</span>
+                  <strong id="zohoMetaStatus">Not Synced</strong>
+                </div>
+                <div class="meta-item">
+                  <span>Updated</span>
+                  <strong id="zohoMetaUpdated">-</strong>
+                </div>
+              </div>
               <p class="zoho-sync-note">
-                Synced from Zoho on selection: Project Name, Project Number/Work Order, Client Name, and
-                Project Users for Elegrow attendee dropdown (only @elegrow.com users).
+                Synced from Zoho on selection: Project Name, Project Number/Work Order, and Project Users for
+                Elegrow attendee dropdown (only @elegrow.com users). Client Name is entered manually.
               </p>
+              <div class="status-legend editor-status-legend" aria-label="Editor Status Colors">
+                <span class="status-chip tone-active"><i></i>Active</span>
+                <span class="status-chip tone-planning"><i></i>Planning</span>
+                <span class="status-chip tone-review"><i></i>Client Review</span>
+                <span class="status-chip tone-hold"><i></i>On Hold</span>
+                <span class="status-chip tone-complete"><i></i>Completed</span>
+                <span class="status-chip tone-cancelled"><i></i>Cancelled</span>
+              </div>
             </div>
             <div class="grid grid-2">
               <label>
@@ -134,7 +170,7 @@
               </label>
               <label>
                 Client Name
-                <input id="clientName" name="clientName" type="text" readonly />
+                <input id="clientName" name="clientName" type="text" placeholder="Enter client name manually" />
               </label>
               <label>
                 Meeting Date
@@ -218,16 +254,8 @@
           </section>
 
           <section class="panel">
-            <h2>3. Minutes</h2>
-            <label>
-              Minutes
-              <textarea id="minutes" name="minutes" rows="6" placeholder="Write complete minutes here..."></textarea>
-            </label>
-          </section>
-
-          <section class="panel">
             <div class="panel-head">
-              <h2>4. Agenda</h2>
+              <h2>3. Agenda</h2>
               <button id="addAgendaRowBtn" class="btn btn-light" type="button">Add Agenda Row</button>
             </div>
             <div class="table-wrap">
@@ -327,17 +355,17 @@
         <div class="option-list">
           <label class="option-item"><input id="optGeneratePdf" type="checkbox" checked /> Generate PDF</label>
           <label class="option-item"><input id="optPrintPdf" type="checkbox" /> Print PDF</label>
-          <label class="option-item"><input id="optSendEmail" type="checkbox" /> Mail M.O.M to Client</label>
+          <label class="option-item"><input id="optSendEmail" type="checkbox" /> Open Outlook Draft</label>
         </div>
 
         <div id="emailFields" class="email-fields hidden">
           <label>
-            To
-            <input id="emailTo" type="text" placeholder="client@example.com" />
+            To (Optional)
+            <input id="emailTo" type="text" placeholder="client@example.com (or leave blank)" />
           </label>
           <label>
-            Cc
-            <input id="emailCc" type="text" placeholder="team@example.com" />
+            Cc (Optional)
+            <input id="emailCc" type="text" placeholder="team@example.com (optional)" />
           </label>
           <label>
             Subject
@@ -347,6 +375,10 @@
             Body
             <textarea id="emailBody" rows="4" placeholder="Email message..."></textarea>
           </label>
+          <p class="zoho-sync-note">
+            Outlook draft opens with prefilled details and PDF link. For security reasons, attachment is added
+            manually by user.
+          </p>
         </div>
 
         <menu>

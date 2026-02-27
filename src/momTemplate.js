@@ -31,7 +31,6 @@ function sanitizeMomPayload(payload) {
     facilitatorRepresentative: sanitizeString(payload.facilitatorRepresentative),
     elegrowRepresentative: sanitizeString(payload.elegrowRepresentative),
     clientRepresentative: sanitizeString(payload.clientRepresentative),
-    minutes: sanitizeString(payload.minutes),
     agendaRows: toArray(payload.agendaRows).map((row, index) => ({
       srNo: sanitizeString(row?.srNo) || String(index + 1),
       agenda: sanitizeString(row?.agenda),

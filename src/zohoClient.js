@@ -7,14 +7,18 @@ const mockProjects = [
     name: 'Corporate Website Revamp',
     projectNumber: 'PRJ-2026-001',
     clientName: 'Acme Corporation',
-    workOrderNo: 'WO-ACME-42'
+    workOrderNo: 'WO-ACME-42',
+    ownerName: 'Rakesh Patel',
+    stage: 'Execution'
   },
   {
     id: '1002',
     name: 'Mobile App Rollout',
     projectNumber: 'PRJ-2026-002',
     clientName: 'BlueWave Logistics',
-    workOrderNo: 'WO-BLUE-88'
+    workOrderNo: 'WO-BLUE-88',
+    ownerName: 'Nidhi Shah',
+    stage: 'Planning'
   }
 ];
 
@@ -29,8 +33,46 @@ const mockProjectUsers = {
   ]
 };
 
+const mockProjectClientUsers = {
+  '1001': [
+    {
+      id: 'cu101',
+      displayName: 'Anil Mehta',
+      email: 'anil@acme.com',
+      role: 'Client User',
+      companyName: 'Acme Corporation',
+      userType: 'client',
+      isClient: true
+    }
+  ],
+  '1002': [
+    {
+      id: 'cu201',
+      displayName: 'Rina Shah',
+      email: 'rina@bluewave.com',
+      role: 'Client User',
+      companyName: 'BlueWave Logistics',
+      userType: 'client',
+      isClient: true
+    }
+  ]
+};
+
 let currentAccessToken = config.zoho.accessToken || '';
 let refreshInFlight = null;
+const GENERIC_CLIENT_LABELS = new Set(['', '-', 'allexternal', 'external', 'client', 'all external']);
+const GENERIC_LIFECYCLE_STAGE_LABELS = new Set([
+  'active',
+  'open',
+  'opened',
+  'archived',
+  'archive',
+  'closed',
+  'complete',
+  'completed',
+  'in progress',
+  'progress'
+]);
 
 function asText(value) {
   if (value === undefined || value === null) {
@@ -49,6 +91,18 @@ function asText(value) {
     }
   }
   return '';
+}
+
+function sanitizeClientName(value) {
+  const text = asText(value).trim();
+  if (!text) {
+    return '';
+  }
+  const normalized = text.toLowerCase();
+  if (GENERIC_CLIENT_LABELS.has(normalized)) {
+    return '';
+  }
+  return text;
 }
 
 function extractProjectId(project) {
@@ -133,6 +187,155 @@ function readCustomValue(project, aliases) {
   return '';
 }
 
+function readNestedText(source, keys) {
+  if (!source || typeof source !== 'object') {
+    return '';
+  }
+  for (const key of keys) {
+    const value = source[key];
+    if (value === undefined || value === null) {
+      continue;
+    }
+    if (typeof value === 'string' || typeof value === 'number') {
+      const text = String(value).trim();
+      if (text) {
+        return text;
+      }
+      continue;
+    }
+    if (typeof value === 'object') {
+      const nested = readNestedText(value, [
+        'name',
+        'display_name',
+        'full_name',
+        'value',
+        'text',
+        'label',
+        'display_value',
+        'status',
+        'status_name',
+        'stage',
+        'stage_name'
+      ]);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+  return '';
+}
+
+function normalizeStageText(value) {
+  const text = asText(value).trim();
+  if (!text || /^\d+$/.test(text)) {
+    return '';
+  }
+
+  const compact = text.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!compact) {
+    return '';
+  }
+
+  if (compact === compact.toLowerCase()) {
+    return compact
+      .split(' ')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  return compact;
+}
+
+function isGenericLifecycleStage(value) {
+  const normalized = normalizeStageText(value).toLowerCase();
+  return GENERIC_LIFECYCLE_STAGE_LABELS.has(normalized);
+}
+
+function readCustomFieldCandidates(project, aliases) {
+  if (!project || typeof project !== 'object' || !Array.isArray(project.custom_fields)) {
+    return [];
+  }
+
+  const normalizedAliases = aliases.map((name) => String(name).toLowerCase());
+  const values = [];
+  for (const field of project.custom_fields) {
+    const key = String(field?.label || field?.name || '').toLowerCase();
+    if (!normalizedAliases.some((alias) => key.includes(alias))) {
+      continue;
+    }
+    values.push(field?.display_value, field?.value, field?.text, field?.name);
+  }
+
+  return values.map(normalizeStageText).filter(Boolean);
+}
+
+function extractOwnerName(project) {
+  const direct =
+    asText(project.owner_name) ||
+    asText(project.owner_full_name) ||
+    asText(project.owner_display_name) ||
+    asText(project.owner_user_name) ||
+    asText(project.project_owner_name) ||
+    '';
+  if (direct) {
+    return direct;
+  }
+
+  const nestedOwner =
+    readNestedText(project, ['owner', 'project_owner', 'owner_details', 'owner_data']) ||
+    readCustomValue(project, ['owner', 'project owner', 'responsible']) ||
+    '';
+  return nestedOwner;
+}
+
+function extractStage(project) {
+  const nestedCandidates = [
+    readNestedText(project, [
+      'project_stage',
+      'stage_details',
+      'project_status',
+      'status_details',
+      'status_data',
+      'status_info',
+      'status_obj',
+      'custom_status',
+      'custom_stage',
+      'stage'
+    ]),
+    readNestedText(project, ['status']),
+    readNestedText(project, ['status_name', 'stage_name']),
+    asText(project.project_stage_name),
+    asText(project.custom_status_name),
+    asText(project.custom_stage_name),
+    asText(project.stage_name),
+    asText(project.stage),
+    asText(project.current_status),
+    asText(project.status_text),
+    asText(project.status_label),
+    readCustomValue(project, ['project stage', 'stage']),
+    ...readCustomFieldCandidates(project, ['project stage', 'stage', 'status'])
+  ]
+    .map(normalizeStageText)
+    .filter(Boolean);
+
+  const directCandidates = [
+    asText(project.project_status),
+    asText(project.status_name),
+    asText(project.status_type),
+    asText(project.status)
+  ]
+    .map(normalizeStageText)
+    .filter(Boolean);
+
+  const allCandidates = [...nestedCandidates, ...directCandidates];
+  if (!allCandidates.length) {
+    return '';
+  }
+
+  const nonGeneric = allCandidates.find((value) => !isGenericLifecycleStage(value));
+  return nonGeneric || allCandidates[0];
+}
+
 function normalizeProject(project) {
   const id = extractProjectId(project);
   const name = asText(project.name || project.project_name);
@@ -151,27 +354,47 @@ function normalizeProject(project) {
     asText(project.client?.name) ||
     asText(project.customer_name) ||
     asText(project.customer?.name) ||
-    asText(project.owner_name) ||
     '';
   const updatedAt =
     asText(project.last_updated_time) ||
+    asText(project.last_updated_time_long) ||
     asText(project.updated_time) ||
+    asText(project.updated_time_long) ||
     asText(project.last_update_time) ||
     asText(project.modified_time) ||
+    asText(project.modified_time_long) ||
     asText(project.updated_at) ||
     '';
   const createdAt =
     asText(project.created_time) ||
+    asText(project.created_time_long) ||
     asText(project.created_at) ||
+    asText(project.created_date_long) ||
     asText(project.create_time) ||
     '';
+
+  const ownerName = extractOwnerName(project);
+  const stage = extractStage(project);
+  const completion =
+    asText(project.completed_percent) ||
+    asText(project.percent_complete) ||
+    asText(project.completion_percentage) ||
+    '';
+  const isClosed = String(project.is_closed || '').toLowerCase() === 'true';
+  const derivedStage =
+    stage ||
+    (isClosed ? 'Closed' : '') ||
+    (completion === '100' ? 'Completed' : '') ||
+    (completion ? `In Progress (${completion}%)` : '');
 
   return {
     id: asText(id),
     name: asText(name),
     projectNumber: asText(projectNumber),
-    clientName: asText(clientName),
+    clientName: sanitizeClientName(clientName),
     workOrderNo: asText(workOrderNo),
+    ownerName: asText(ownerName),
+    stage: asText(derivedStage),
     updatedAt: asText(updatedAt),
     createdAt: asText(createdAt)
   };
@@ -209,6 +432,31 @@ function collectProjectList(payload) {
   }
 
   return [];
+}
+
+function collectProjectDetail(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  if (Array.isArray(payload)) {
+    return payload[0] || null;
+  }
+
+  if (payload.project && typeof payload.project === 'object') {
+    return payload.project;
+  }
+
+  const list = collectProjectList(payload);
+  if (list.length) {
+    return list[0];
+  }
+
+  if (payload.id || payload.id_string || payload.project_id) {
+    return payload;
+  }
+
+  return null;
 }
 
 function hasRefreshCredentials() {
@@ -355,6 +603,83 @@ async function requestZohoGet(url, params = {}, allowRetry = true) {
   }
 }
 
+async function fetchProjectDetailFromZoho(projectId) {
+  await ensureZohoCredentials();
+  const projectBase = buildZohoProjectsBasePath();
+  const endpoints = [`${projectBase}/${projectId}/`, `${projectBase}/${projectId}`];
+
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await requestZohoGet(endpoint, {}, true);
+      const detail = collectProjectDetail(response.data);
+      if (detail && typeof detail === 'object') {
+        return detail;
+      }
+    } catch (error) {
+      lastError = error;
+      if (!isAxiosStatus(error, 404) && !isAxiosStatus(error, 400)) {
+        throw error;
+      }
+    }
+  }
+
+  if (lastError) {
+    return null;
+  }
+  return null;
+}
+
+async function enrichProjectsWithDetailStatus(projects) {
+  if (!config.zoho.enrichProjectStage || !Array.isArray(projects) || projects.length === 0) {
+    return projects;
+  }
+
+  const enriched = projects.map((project) => ({ ...project }));
+  const candidates = enriched.filter(
+    (project) =>
+      (project.id && /^\d{8,}$/.test(String(project.id))) &&
+      (isGenericLifecycleStage(project.stage) || !String(project.stage || '').trim())
+  );
+
+  if (!candidates.length) {
+    return enriched;
+  }
+
+  const concurrency = 4;
+  let index = 0;
+  const workers = new Array(Math.min(concurrency, candidates.length)).fill(null).map(async () => {
+    while (index < candidates.length) {
+      const currentIndex = index;
+      index += 1;
+
+      const candidate = candidates[currentIndex];
+      try {
+        const detailRaw = await fetchProjectDetailFromZoho(candidate.id);
+        if (!detailRaw) {
+          continue;
+        }
+
+        const detail = normalizeProject(detailRaw);
+        if (detail.stage && (!candidate.stage || isGenericLifecycleStage(candidate.stage))) {
+          candidate.stage = detail.stage;
+        }
+        if (!candidate.ownerName && detail.ownerName) {
+          candidate.ownerName = detail.ownerName;
+        }
+        if (!candidate.updatedAt && detail.updatedAt) {
+          candidate.updatedAt = detail.updatedAt;
+        }
+      } catch (_error) {
+        // Ignore detail-level failures and keep list-level values.
+      }
+    }
+  });
+
+  await Promise.all(workers);
+  return enriched;
+}
+
 function normalizeUser(user) {
   const id = asText(user.id || user.user_id || user.zpuid || user.uid);
   const firstName = asText(user.first_name || user.firstname);
@@ -368,12 +693,28 @@ function normalizeUser(user) {
     '';
   const email = asText(user.email || user.email_id || user.mail || user.primary_email);
   const role = asText(user.role || user.role_name || user.user_role);
+  const companyName = asText(
+    user.company_name ||
+      user.company ||
+      user.organization_name ||
+      user.account_name ||
+      user.client_name ||
+      user.customer_name
+  );
+  const userType = asText(user.user_type || user.type || user.member_type || user.category);
+  const isClientFlag = String(user.is_client || user.client_user || '').toLowerCase() === 'true';
+  const isClientByType = /client/i.test(userType);
+  const isClientByRole = /client/i.test(role);
+  const isClient = isClientFlag || isClientByType || isClientByRole;
 
   return {
     id: asText(id),
     displayName: asText(fullName),
     email: asText(email),
-    role: asText(role)
+    role: asText(role),
+    companyName: asText(companyName),
+    userType: asText(userType),
+    isClient
   };
 }
 
@@ -386,7 +727,7 @@ function collectUserList(payload) {
     return payload;
   }
 
-  const keys = ['users', 'user', 'data', 'result', 'response', 'records', 'items'];
+  const keys = ['users', 'user', 'client_users', 'clientUsers', 'data', 'result', 'response', 'records', 'items'];
   for (const key of keys) {
     if (Array.isArray(payload[key])) {
       return payload[key];
@@ -438,6 +779,38 @@ function filterUsersToOrgDomain(users) {
   });
 }
 
+function isOrgEmail(email) {
+  const configured = String(config.zoho.organizationUserEmailDomain || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^@/, '');
+  if (!configured) {
+    return false;
+  }
+  return String(email || '')
+    .trim()
+    .toLowerCase()
+    .endsWith(`@${configured}`);
+}
+
+function filterUsersToClientUsers(users) {
+  const unique = new Map();
+  for (const user of users) {
+    const byFlag = Boolean(user.isClient);
+    const byType = /client/i.test(String(user.userType || ''));
+    const byRole = /client/i.test(String(user.role || ''));
+    const byEmail = user.email ? !isOrgEmail(user.email) : false;
+    if (!(byFlag || byType || byRole || byEmail)) {
+      continue;
+    }
+    const key = `${user.id}::${String(user.email || '').toLowerCase()}::${String(user.displayName || '').toLowerCase()}`;
+    if (!unique.has(key)) {
+      unique.set(key, user);
+    }
+  }
+  return Array.from(unique.values());
+}
+
 async function fetchFromZoho(query) {
   await ensureZohoCredentials();
   const endpoint = `${buildZohoProjectsBasePath()}/`;
@@ -484,13 +857,14 @@ async function fetchFromZoho(query) {
   }
 
   const projects = Array.from(uniqueMap.values());
+  const stageEnrichedProjects = await enrichProjectsWithDetailStatus(projects);
 
   if (!query) {
-    return projects;
+    return stageEnrichedProjects;
   }
 
   const needle = query.toLowerCase();
-  return projects.filter((project) => {
+  return stageEnrichedProjects.filter((project) => {
     return [
       project.id,
       project.name,
@@ -538,6 +912,54 @@ async function fetchProjectUsersFromZoho(projectId) {
   }
 
   throw new Error(toZohoErrorMessage(lastError));
+}
+
+async function requestClientUsersFromEndpoints(projectId) {
+  const projectBase = buildZohoProjectsBasePath();
+  const endpoints = [
+    { url: `${projectBase}/${projectId}/users/`, params: { user_type: 'client' } },
+    { url: `${projectBase}/${projectId}/users`, params: { user_type: 'client' } },
+    { url: `${projectBase}/${projectId}/users/`, params: { usertype: 'client' } },
+    { url: `${projectBase}/${projectId}/users`, params: { usertype: 'client' } },
+    { url: `${projectBase}/${projectId}/clientusers/`, params: {} },
+    { url: `${projectBase}/${projectId}/clientusers`, params: {} },
+    { url: `${projectBase}/${projectId}/clients/`, params: {} },
+    { url: `${projectBase}/${projectId}/clients`, params: {} }
+  ];
+
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await requestZohoGet(endpoint.url, endpoint.params, true);
+      const users = collectUserList(response.data).map(normalizeUser);
+      const clientUsers = filterUsersToClientUsers(users);
+      if (clientUsers.length) {
+        return clientUsers;
+      }
+    } catch (error) {
+      lastError = error;
+      if (!isAxiosStatus(error, 404) && !isAxiosStatus(error, 400)) {
+        throw new Error(toZohoErrorMessage(error));
+      }
+    }
+  }
+
+  if (lastError) {
+    return [];
+  }
+  return [];
+}
+
+async function fetchProjectClientUsersFromZoho(projectId) {
+  await ensureZohoCredentials();
+  const fromClientEndpoints = await requestClientUsersFromEndpoints(projectId);
+  if (fromClientEndpoints.length) {
+    return fromClientEndpoints;
+  }
+
+  // Fallback: derive client users from complete users list.
+  const allUsers = await fetchProjectUsersFromZoho(projectId);
+  return filterUsersToClientUsers(allUsers);
 }
 
 async function resolveProjectReferenceToId(projectRef) {
@@ -617,7 +1039,22 @@ async function getProjectUsers(projectId) {
   return filterUsersToOrgDomain(users);
 }
 
+async function getProjectClientUsers(projectId) {
+  const id = String(projectId || '').trim();
+  if (!id) {
+    throw new Error('Project ID is required to fetch Zoho client users.');
+  }
+
+  if (config.zoho.useMock) {
+    return mockProjectClientUsers[id] || [];
+  }
+
+  const resolvedId = await resolveProjectReferenceToId(id);
+  return fetchProjectClientUsersFromZoho(resolvedId);
+}
+
 module.exports = {
   getProjects,
-  getProjectUsers
+  getProjectUsers,
+  getProjectClientUsers
 };

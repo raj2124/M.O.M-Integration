@@ -1,8 +1,5 @@
 const dashboardView = document.getElementById('dashboardView');
 const editorView = document.getElementById('editorView');
-const navDashboardBtn = document.getElementById('navDashboardBtn');
-const navEditorBtn = document.getElementById('navEditorBtn');
-const startNewMomBtn = document.getElementById('startNewMomBtn');
 const startNewMomHeroBtn = document.getElementById('startNewMomHeroBtn');
 const backToDashboardBtn = document.getElementById('backToDashboardBtn');
 const newMomBtn = document.getElementById('newMomBtn');
@@ -14,6 +11,11 @@ const zohoListStatus = document.getElementById('zohoListStatus');
 const projectEntryHint = document.getElementById('projectEntryHint');
 const zohoProjectPickerRow = document.getElementById('zohoProjectPickerRow');
 const zohoProjectSelect = document.getElementById('zohoProjectSelect');
+const zohoProjectMeta = document.getElementById('zohoProjectMeta');
+const zohoMetaOwner = document.getElementById('zohoMetaOwner');
+const zohoMetaStatus = document.getElementById('zohoMetaStatus');
+const zohoMetaUpdated = document.getElementById('zohoMetaUpdated');
+const zohoMetaStatusWrap = document.getElementById('zohoMetaStatusWrap');
 const projectNameInput = document.getElementById('projectName');
 const projectNoInput = document.getElementById('projectNoWorkOrderNo');
 const clientNameInput = document.getElementById('clientName');
@@ -50,6 +52,16 @@ const cancelDelivery = document.getElementById('cancelDelivery');
 
 const TOTAL_MOM_KEY = 'mom_total_submitted_count';
 const DASHBOARD_RECENT_LIMIT = 8;
+const STAGE_TONE_CLASSES = [
+  'tone-default',
+  'tone-active',
+  'tone-planning',
+  'tone-review',
+  'tone-hold',
+  'tone-delay',
+  'tone-complete',
+  'tone-cancelled'
+];
 let dashboardSearchTimer;
 let activeProjectSource = 'zoho';
 let cachedZohoProjects = [];
@@ -67,15 +79,9 @@ function showToast(message, type = 'success') {
   }, 2800);
 }
 
-function setActiveNav(viewName) {
-  navDashboardBtn.classList.toggle('nav-chip-active', viewName === 'dashboard');
-  navEditorBtn.classList.toggle('nav-chip-active', viewName === 'editor');
-}
-
 function setView(viewName) {
   dashboardView.classList.toggle('view-active', viewName === 'dashboard');
   editorView.classList.toggle('view-active', viewName === 'editor');
-  setActiveNav(viewName);
 }
 
 function getSubmittedCount() {
@@ -102,7 +108,11 @@ async function refreshHealthStatus() {
     }
 
     kpiZohoMode.textContent = data.zohoMode === 'mock' ? 'Mock Mode' : 'Live Mode';
-    kpiEmailMode.textContent = data.emailEnabled ? 'Enabled' : 'Disabled';
+    if (data.emailMode === 'outlook-draft') {
+      kpiEmailMode.textContent = 'Outlook Draft';
+    } else {
+      kpiEmailMode.textContent = data.emailEnabled ? 'Enabled' : 'Disabled';
+    }
   } catch (_error) {
     kpiZohoMode.textContent = 'Unavailable';
     kpiEmailMode.textContent = 'Unavailable';
@@ -168,6 +178,97 @@ function getProjectDisplayName(project) {
   return 'Untitled Project';
 }
 
+function getProjectOwner(project) {
+  return String(project.ownerName || '').trim() || 'Not synced';
+}
+
+function getProjectStage(project) {
+  return String(project.stage || '').trim() || 'Not synced';
+}
+
+function normalizeStageText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function formatStageLabel(value) {
+  const text = String(value || '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) {
+    return 'Not Synced';
+  }
+  return text
+    .split(' ')
+    .map((word) => {
+      if (!word) {
+        return word;
+      }
+      if (word === word.toUpperCase() && word.length <= 3) {
+        return word;
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+
+function getStageLabel(project) {
+  return formatStageLabel(getProjectStage(project));
+}
+
+function getStageToneClass(project) {
+  const stage = normalizeStageText(getProjectStage(project));
+  if (!stage || stage === 'not synced') {
+    return 'tone-default';
+  }
+  if (/cancel|cancelled|canceled|reject|drop|abandon|terminate/.test(stage)) {
+    return 'tone-cancelled';
+  }
+  if (/complete|completed|closed|done|deliver|handover/.test(stage)) {
+    return 'tone-complete';
+  }
+  if (/hold|on hold|blocked|pause|paused|stuck/.test(stage)) {
+    return 'tone-hold';
+  }
+  if (/review|approval|client review|pending client|verify|validation|qa/.test(stage)) {
+    return 'tone-review';
+  }
+  if (/plan|planning|draft|kickoff|kick off|initiat|scoping/.test(stage)) {
+    return 'tone-planning';
+  }
+  if (/delay|delayed|overdue|risk/.test(stage)) {
+    return 'tone-delay';
+  }
+  if (/active|progress|execution|running|ongoing|wip/.test(stage)) {
+    return 'tone-active';
+  }
+  return 'tone-default';
+}
+
+function renderZohoProjectMeta(project) {
+  if (!zohoProjectMeta || !zohoMetaOwner || !zohoMetaStatus || !zohoMetaUpdated || !zohoMetaStatusWrap) {
+    return;
+  }
+
+  if (!project) {
+    zohoProjectMeta.classList.add('hidden');
+    zohoMetaOwner.textContent = '-';
+    zohoMetaStatus.textContent = 'Not Synced';
+    zohoMetaUpdated.textContent = '-';
+    STAGE_TONE_CLASSES.forEach((toneClass) => zohoMetaStatusWrap.classList.remove(toneClass));
+    zohoMetaStatusWrap.classList.add('tone-default');
+    return;
+  }
+
+  zohoProjectMeta.classList.remove('hidden');
+  zohoMetaOwner.textContent = getProjectOwner(project);
+  zohoMetaStatus.textContent = getStageLabel(project);
+  zohoMetaUpdated.textContent = formatProjectDate(project);
+  STAGE_TONE_CLASSES.forEach((toneClass) => zohoMetaStatusWrap.classList.remove(toneClass));
+  zohoMetaStatusWrap.classList.add(getStageToneClass(project));
+}
+
 function normalizeRefValue(value) {
   if (value === undefined || value === null) {
     return '';
@@ -212,7 +313,7 @@ function setProjectSource(mode) {
   const isManual = mode === 'manual';
   projectNameInput.readOnly = !isManual;
   projectNoInput.readOnly = !isManual;
-  clientNameInput.readOnly = !isManual;
+  clientNameInput.readOnly = false;
   zohoProjectPickerRow.classList.toggle('hidden', isManual);
 
   if (isManual) {
@@ -225,9 +326,16 @@ function setProjectSource(mode) {
     projectUsersCache.clear();
     refreshAttendeeUserDropdowns();
     zohoProjectSelect.value = '';
+    renderZohoProjectMeta(null);
   } else {
     projectEntryHint.textContent = 'Project details source: Zoho Projects';
     projectEntryHint.classList.remove('manual');
+    if (zohoProjectSelect.value) {
+      const currentProject = cachedZohoProjects.find((item) => item._key === zohoProjectSelect.value);
+      renderZohoProjectMeta(currentProject || null);
+    } else {
+      renderZohoProjectMeta(null);
+    }
   }
 }
 
@@ -391,6 +499,7 @@ function resetFormForNewSheet() {
   isProjectUsersLoading = false;
   projectUsersRequestSeq += 1;
   refreshAttendeeUserDropdowns();
+  renderZohoProjectMeta(null);
   resetRows();
   document.getElementById('organizationAddress').value =
     '302, Sangini Aspire, Beside Sanskruti Township Near Pal RTO, Pal-Hajira Road, Pal Gam, Surat, Gujarat - 395009';
@@ -402,7 +511,8 @@ function fillProjectFields(project) {
   const projectNoValue = project.projectNumber || project.name || '';
   const projectNoWorkOrder = [projectNoValue, project.workOrderNo].filter(Boolean).join(' / ');
   projectNoInput.value = projectNoWorkOrder;
-  clientNameInput.value = project.clientName || '';
+  clientNameInput.value = '';
+  renderZohoProjectMeta(project);
 }
 
 function getProjectKey(project, index = 0) {
@@ -423,8 +533,8 @@ function populateZohoProjectSelect(projects) {
     const option = document.createElement('option');
     option.value = project._key;
     const name = getProjectDisplayName(project);
-    const client = project.clientName ? ` | ${project.clientName}` : '';
-    option.textContent = `${name}${client}`;
+    const stageLabel = getStageLabel(project);
+    option.textContent = `${name} | ${stageLabel}`;
     zohoProjectSelect.appendChild(option);
   }
 
@@ -440,6 +550,7 @@ function applyZohoProjectByKey(projectKey) {
     isProjectUsersLoading = false;
     projectUsersRequestSeq += 1;
     refreshAttendeeUserDropdowns();
+    renderZohoProjectMeta(null);
     return;
   }
   fillProjectFields(project);
@@ -560,10 +671,16 @@ function renderProjectResults(projects) {
     li.className = 'result-item';
     const name = getProjectDisplayName(project);
     const dateText = formatProjectDate(project);
+    const stageClass = getStageToneClass(project);
+    const stageLabel = getStageLabel(project);
 
     li.innerHTML = `
       <strong>${name}</strong><br />
-      <small>Client: ${project.clientName || '-'} | Updated: ${dateText}</small>
+      <small>
+        Owner: ${getProjectOwner(project)} |
+        Status: <span class="result-stage-badge ${stageClass}">${stageLabel}</span> |
+        Updated: ${dateText}
+      </small>
     `;
 
     li.addEventListener('click', () => {
@@ -608,17 +725,28 @@ function renderDashboardProjects(projects, query = '') {
 
   for (const project of projects) {
     const card = document.createElement('article');
-    card.className = 'recent-project-card';
+    const stageClass = getStageToneClass(project);
+    card.className = `recent-project-card ${stageClass}`;
 
     const name = getProjectDisplayName(project);
     const updatedLabel = formatProjectDate(project);
+    const stageLabel = getStageLabel(project);
 
     card.innerHTML = `
       <div class="recent-project-head">
         <h3>${name}</h3>
         <span class="recent-date">${updatedLabel}</span>
       </div>
-      <p class="recent-client">Client: ${project.clientName || '-'}</p>
+      <div class="recent-meta-grid">
+        <div class="recent-meta-pill">
+          <span>Owner</span>
+          <strong>${getProjectOwner(project)}</strong>
+        </div>
+        <div class="recent-meta-pill stage ${stageClass}">
+          <span>Status</span>
+          <strong class="stage-value"><i class="stage-dot"></i>${stageLabel}</strong>
+        </div>
+      </div>
       <button type="button" class="btn btn-light recent-use-btn">Use For New M.O.M</button>
     `;
 
@@ -664,7 +792,7 @@ function applyDashboardFilter() {
   const query = dashboardSearchInput.value.trim().toLowerCase();
   const filtered = query
     ? allZohoProjects.filter((project) =>
-        [getProjectDisplayName(project), project.clientName || '', project.projectNumber || '']
+        [getProjectDisplayName(project), project.projectNumber || '', project.ownerName || '', project.stage || '']
           .join(' ')
           .toLowerCase()
           .includes(query)
@@ -718,7 +846,6 @@ function collectMomPayload() {
     facilitatorRepresentative: document.getElementById('facilitatorRepresentative').value,
     elegrowRepresentative: document.getElementById('elegrowRepresentative').value,
     clientRepresentative: document.getElementById('clientRepresentative').value,
-    minutes: document.getElementById('minutes').value,
     agendaRows: collectAgendaRows(),
     attendeeRows: collectAttendeeRows(),
     organizationAddress: document.getElementById('organizationAddress').value
@@ -770,11 +897,19 @@ function closeAllDialogs() {
 function openProjectSourcePicker() {
   setView('editor');
   resetFormForNewSheet();
+  setProjectSource('zoho');
   projectSearchInput.value = '';
   projectResults.innerHTML = '';
 
-  if (typeof projectSourceModal.showModal === 'function') {
-    projectSourceModal.showModal();
+  if (!allZohoProjects.length) {
+    fetchProjects('')
+      .then((projects) => {
+        allZohoProjects = projects;
+        populateZohoProjectSelect(allZohoProjects);
+      })
+      .catch((error) => {
+        showToast(error.message || 'Unable to sync Zoho projects.', 'error');
+      });
   }
 }
 
@@ -796,7 +931,6 @@ async function openZohoProjectPicker() {
   }
 }
 
-startNewMomBtn.addEventListener('click', openProjectSourcePicker);
 startNewMomHeroBtn.addEventListener('click', openProjectSourcePicker);
 newMomBtn.addEventListener('click', openProjectSourcePicker);
 
@@ -818,14 +952,6 @@ closeSourceModal.addEventListener('click', () => {
 
 zohoProjectSelect.addEventListener('change', () => {
   applyZohoProjectByKey(zohoProjectSelect.value);
-});
-
-navDashboardBtn.addEventListener('click', () => {
-  setView('dashboard');
-});
-
-navEditorBtn.addEventListener('click', () => {
-  setView('editor');
 });
 
 backToDashboardBtn.addEventListener('click', () => {
@@ -897,11 +1023,6 @@ confirmSubmitBtn.addEventListener('click', async () => {
     return;
   }
 
-  if (options.sendEmail && !options.emailTo.trim()) {
-    showToast('Please provide recipient email in To field.', 'error');
-    return;
-  }
-
   confirmSubmitBtn.disabled = true;
   confirmSubmitBtn.textContent = 'Submitting...';
 
@@ -930,12 +1051,32 @@ confirmSubmitBtn.addEventListener('click', async () => {
     showToast('M.O.M submitted successfully.');
     incrementSubmittedCount();
 
-    if (pdfUrl && options.generatePdf) {
+    let pdfOpened = false;
+
+    if (pdfUrl && (options.generatePdf || options.sendEmail)) {
       window.open(pdfUrl, '_blank');
+      pdfOpened = true;
     }
 
     if (pdfUrl && options.printPdf) {
       printPdfFromUrl(pdfUrl);
+    }
+
+    if (options.sendEmail) {
+      const emailDraft = result.emailDraft || {};
+      const outlookUrl = String(emailDraft.outlookComposeUrl || '').trim();
+      const fallbackMailto = String(emailDraft.mailtoUrl || '').trim();
+      const draftWindow = outlookUrl ? window.open(outlookUrl, '_blank') : null;
+
+      if (!draftWindow && fallbackMailto) {
+        window.location.href = fallbackMailto;
+      }
+
+      if (pdfOpened) {
+        showToast('Outlook draft opened. Attach the opened PDF and send when ready.');
+      } else {
+        showToast('Outlook draft opened. Please generate/download PDF and attach before sending.');
+      }
     }
   } catch (error) {
     showToast(error.message, 'error');

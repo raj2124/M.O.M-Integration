@@ -3,10 +3,9 @@ const fs = require('fs');
 const express = require('express');
 
 const config = require('./config');
-const { getProjects, getProjectUsers } = require('./zohoClient');
+const { getProjects, getProjectUsers, getProjectClientUsers } = require('./zohoClient');
 const { sanitizeMomPayload, validateMomPayload } = require('./momTemplate');
 const { generateMomPdf } = require('./pdfService');
-const { sendMomEmail } = require('./emailService');
 
 const app = express();
 
@@ -20,6 +19,76 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/generated-pdfs', express.static(config.app.generatedDir));
 app.use(express.static(path.join(config.app.rootDir, 'public')));
 
+function buildAbsolutePdfUrl(pdfUrl) {
+  try {
+    return new URL(pdfUrl, config.app.baseUrl).toString();
+  } catch (_error) {
+    return `${String(config.app.baseUrl || '').replace(/\/+$/, '')}${pdfUrl}`;
+  }
+}
+
+function buildOutlookDraft({ mom, options, pdfUrl }) {
+  const to = String(options.emailTo || '').trim();
+  const cc = String(options.emailCc || '').trim();
+  const subject = String(options.emailSubject || '').trim() || `Minutes of Meeting - ${mom.projectName}`;
+  const pdfAbsoluteUrl = buildAbsolutePdfUrl(pdfUrl);
+
+  const defaultBodyLines = [
+    'Dear Team,',
+    '',
+    `Please find the Minutes of Meeting details for "${mom.projectName}" below:`,
+    `- Meeting Title: ${mom.meetingTitle || '-'}`,
+    `- Project: ${mom.projectName || '-'}`,
+    `- Date: ${mom.meetingDate || '-'}`,
+    `- Time: ${mom.meetingTime || '-'}`,
+    `- Location: ${mom.meetingLocation || '-'}`,
+    '',
+    `PDF Link: ${pdfAbsoluteUrl}`,
+    '',
+    'Note: Due to browser and Outlook security limits, the PDF cannot be auto-attached by web link.',
+    'Please attach the downloaded PDF manually before sending.',
+    '',
+    'Regards,',
+    'M.O.M App'
+  ];
+
+  const customBody = String(options.emailBody || '').trim();
+  const body = customBody
+    ? `${customBody}\n\nPDF Link: ${pdfAbsoluteUrl}\n\nPlease attach the generated PDF manually before sending.`
+    : defaultBodyLines.join('\n');
+
+  const outlookParams = new URLSearchParams();
+  if (to) {
+    outlookParams.set('to', to);
+  }
+  if (cc) {
+    outlookParams.set('cc', cc);
+  }
+  outlookParams.set('subject', subject);
+  outlookParams.set('body', body);
+
+  const mailtoParams = new URLSearchParams();
+  if (cc) {
+    mailtoParams.set('cc', cc);
+  }
+  mailtoParams.set('subject', subject);
+  mailtoParams.set('body', body);
+
+  return {
+    mode: 'outlook-draft',
+    to,
+    cc,
+    subject,
+    body,
+    pdfAbsoluteUrl,
+    outlookComposeUrl: `https://outlook.office.com/mail/deeplink/compose?${outlookParams.toString()}`,
+    mailtoUrl: `mailto:${encodeURIComponent(to)}?${mailtoParams.toString()}`,
+    attachmentAutoSupported: false,
+    attachmentNote:
+      'Attachment cannot be auto-added by browser deeplink. The generated PDF is opened for manual attachment.'
+  };
+}
+
 app.get('/api/health', (_req, res) => {
   const zohoAutoRefreshConfigured = Boolean(
     config.zoho.refreshToken && config.zoho.clientId && config.zoho.clientSecret
@@ -30,7 +99,8 @@ app.get('/api/health', (_req, res) => {
     timestamp: new Date().toISOString(),
     zohoMode: config.zoho.useMock ? 'mock' : 'live',
     zohoAutoRefreshConfigured,
-    emailEnabled: config.email.enabled
+    emailEnabled: true,
+    emailMode: 'outlook-draft'
   });
 });
 
@@ -70,6 +140,24 @@ app.get('/api/zoho/projects/:projectId/users', async (req, res) => {
   }
 });
 
+app.get('/api/zoho/projects/:projectId/client-users', async (req, res) => {
+  try {
+    const projectId = String(req.params.projectId || '').trim();
+    const users = await getProjectClientUsers(projectId);
+
+    res.json({
+      success: true,
+      users
+    });
+  } catch (error) {
+    res.json({
+      success: true,
+      users: [],
+      message: error.message || 'Zoho client users not available for this project.'
+    });
+  }
+});
+
 app.post('/api/mom/submit', async (req, res) => {
   try {
     const mom = sanitizeMomPayload(req.body.mom || {});
@@ -93,22 +181,16 @@ app.post('/api/mom/submit', async (req, res) => {
       });
     }
 
-    const { fileName, filePath } = await generateMomPdf(mom, config.app.generatedDir);
+    const { fileName } = await generateMomPdf(mom, config.app.generatedDir);
     const pdfUrl = `/generated-pdfs/${fileName}`;
 
-    let emailSent = false;
+    let emailDraft = null;
     if (options.sendEmail) {
-      await sendMomEmail({
-        to: options.emailTo,
-        cc: options.emailCc,
-        subject: options.emailSubject || `Minutes of Meeting - ${mom.projectName}`,
-        body:
-          options.emailBody ||
-          `<p>Dear Team,</p><p>Please find attached the Minutes of Meeting for <strong>${mom.projectName}</strong>.</p><p>Regards,<br/>M.O.M App</p>`,
-        attachmentPath: filePath,
-        attachmentName: fileName
+      emailDraft = buildOutlookDraft({
+        mom,
+        options,
+        pdfUrl
       });
-      emailSent = true;
     }
 
     return res.json({
@@ -117,7 +199,9 @@ app.post('/api/mom/submit', async (req, res) => {
       result: {
         pdfUrl,
         pdfFileName: fileName,
-        emailSent,
+        pdfAbsoluteUrl: buildAbsolutePdfUrl(pdfUrl),
+        emailSent: false,
+        emailDraft,
         printRequested: Boolean(options.printPdf)
       }
     });

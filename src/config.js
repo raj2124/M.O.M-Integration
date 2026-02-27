@@ -25,6 +25,7 @@ const config = {
   },
   zoho: {
     useMock: toBool(process.env.ZOHO_USE_MOCK, true),
+    enrichProjectStage: toBool(process.env.ZOHO_ENRICH_PROJECT_STAGE, true),
     baseUrl: process.env.ZOHO_BASE_URL || 'https://projectsapi.zoho.com/restapi',
     accountsBaseUrl: process.env.ZOHO_ACCOUNTS_BASE_URL || 'https://accounts.zoho.com',
     organizationUserEmailDomain: process.env.ORG_USER_EMAIL_DOMAIN || 'elegrow.com',

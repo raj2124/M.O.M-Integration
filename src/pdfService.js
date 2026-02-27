@@ -184,17 +184,7 @@ async function generateMomPdf(mom, outputDir) {
       mom.clientRepresentative
     );
 
-    sectionTitle(doc, '3. MINUTES');
-    doc
-      .font('Helvetica')
-      .fontSize(10)
-      .fillColor('#0f172a')
-      .text(safeText(mom.minutes), {
-        width: 515,
-        align: 'left'
-      });
-
-    sectionTitle(doc, '4. AGENDA');
+    sectionTitle(doc, '3. AGENDA');
     drawAgendaTable(doc, mom.agendaRows);
 
     sectionTitle(doc, 'Attendees');

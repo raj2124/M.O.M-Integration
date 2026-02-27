@@ -6,7 +6,7 @@ M.O.M web app built from your provided M.O.M PDF format (`MOM-1 Page (1) 1.pdf`)
 - Fetch project data from Zoho Projects (project no, client name, project name)
 - Fill remaining details manually
 - Submit with options:
-  - Mail M.O.M to client
+  - Open Outlook draft (manual send by user)
   - Generate PDF
   - Print PDF
   - Any combination of the above
@@ -22,7 +22,7 @@ M.O.M web app built from your provided M.O.M PDF format (`MOM-1 Page (1) 1.pdf`)
 - Zoho project search + select
 - Form capture with dynamic rows for Agenda and Attendees
 - Server-side PDF generation
-- Optional SMTP email with PDF attachment
+- Outlook draft compose link with prefilled subject/body and PDF link
 - Print via browser PDF print flow
 
 ## Tech stack
@@ -30,14 +30,12 @@ M.O.M web app built from your provided M.O.M PDF format (`MOM-1 Page (1) 1.pdf`)
 - Node.js + Express
 - Vanilla HTML/CSS/JS frontend
 - PDFKit for PDF generation
-- Nodemailer for email
 
 ## Project structure
 
 - `./src/server.js` - API and app server
 - `./src/zohoClient.js` - Zoho integration
 - `./src/pdfService.js` - PDF generation
-- `./src/emailService.js` - SMTP email sending
 - `./public/index.html` - App UI
 - `./public/app.js` - Frontend logic
 - `./public/styles.css` - Styling
@@ -73,18 +71,13 @@ Recommended local bind settings:
   - `ZOHO_CLIENT_SECRET`
 - If your org uses a custom endpoint, set `ZOHO_PROJECTS_ENDPOINT`
 
-4. For email sending:
-
-- Set `SMTP_ENABLED=true`
-- Fill SMTP settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`)
-
-5. Run app:
+4. Run app:
 
 ```bash
 npm run dev
 ```
 
-6. Open:
+5. Open:
 
 - `http://localhost:3000`
 
@@ -93,6 +86,9 @@ npm run dev
 - Default mode is mock Zoho data (`ZOHO_USE_MOCK=true`) for local testing.
 - Generated PDFs are stored in:
   - `./generated-pdfs`
+- Email behavior:
+  - App creates PDF and opens Outlook compose draft in browser.
+  - Browser deeplinks cannot auto-attach files for security reasons; user attaches PDF manually.
 - If the Zoho response schema in your portal differs, adjust field mapping in:
   - `./src/zohoClient.js`
 - To show your official brand logo in the dashboard header, place files at:
