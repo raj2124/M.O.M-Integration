@@ -1,96 +1,71 @@
-# M.O.M App
+# M.O.M Integration
 
-M.O.M web app built from your provided M.O.M PDF format (`MOM-1 Page (1) 1.pdf`) with these flows:
+Minutes of Meeting web app with Zoho Projects integration, PDF export, print support, and Outlook draft handoff.
 
-- Click **New M.O.M Sheet**
-- Fetch project data from Zoho Projects (project no, client name, project name)
-- Fill remaining details manually
-- Submit with options:
-  - Open Outlook draft (manual send by user)
-  - Generate PDF
-  - Print PDF
-  - Any combination of the above
+## Features
 
-## What is implemented
+- Dashboard with recent Zoho projects and project status badges
+- M.O.M editor aligned to your sheet format
+- Zoho project selection from dropdown while creating a new M.O.M
+- Auto-fill of project fields from Zoho (project name/number and team users where available)
+- Agenda and attendees row management
+- PDF generation and browser print flow
+- Outlook compose link with prefilled M.O.M details (user sends manually)
 
-- Sheet sections aligned to the PDF labels:
-  - `1. GENERAL INFORMATION`
-  - `2. DETAILS OF MEETING`
-  - `3. MINUTES`
-  - `4. AGENDA`
-  - `Attendees`
-- Zoho project search + select
-- Form capture with dynamic rows for Agenda and Attendees
-- Server-side PDF generation
-- Outlook draft compose link with prefilled subject/body and PDF link
-- Print via browser PDF print flow
-
-## Tech stack
+## Stack
 
 - Node.js + Express
-- Vanilla HTML/CSS/JS frontend
-- PDFKit for PDF generation
+- Vanilla HTML/CSS/JS
+- PDFKit
 
-## Project structure
+## Project Structure
 
-- `./src/server.js` - API and app server
-- `./src/zohoClient.js` - Zoho integration
-- `./src/pdfService.js` - PDF generation
-- `./public/index.html` - App UI
-- `./public/app.js` - Frontend logic
-- `./public/styles.css` - Styling
+- `src/server.js` - API and app server
+- `src/zohoClient.js` - Zoho Projects integration
+- `src/pdfService.js` - PDF generation
+- `public/index.html` - App UI
+- `public/app.js` - Frontend logic
+- `public/styles.css` - Styling
+- `scripts/smoke-test.js` - smoke checks
 
-## Setup
+## Local Setup
 
-1. Install dependencies:
+1. Install dependencies
 
 ```bash
 npm install
 ```
 
-2. Copy environment file and fill values:
+2. Create environment file
 
 ```bash
 cp .env.example .env
 ```
 
-Recommended local bind settings:
-- `APP_HOST=127.0.0.1`
-- `PORT=3000`
-
-3. For Zoho live mode:
+3. Configure Zoho (live mode)
 
 - Set `ZOHO_USE_MOCK=false`
 - Set `ZOHO_PORTAL_ID`
-- Set `ZOHO_ACCESS_TOKEN` (OAuth access token)
+- Set `ZOHO_CLIENT_ID`
+- Set `ZOHO_CLIENT_SECRET`
+- Set `ZOHO_REFRESH_TOKEN`
 - Set `ZOHO_BASE_URL` and `ZOHO_ACCOUNTS_BASE_URL` for your Zoho data center (`.com` or `.in`)
-- Set `ORG_USER_EMAIL_DOMAIN` (default `elegrow.com`) to restrict Elegrow attendee dropdown users
-- Recommended for auto-renew:
-  - `ZOHO_REFRESH_TOKEN`
-  - `ZOHO_CLIENT_ID`
-  - `ZOHO_CLIENT_SECRET`
-- If your org uses a custom endpoint, set `ZOHO_PROJECTS_ENDPOINT`
+- Optional: set `ZOHO_PROJECTS_ENDPOINT` if your org uses a custom endpoint
 
-4. Run app:
+4. Run app
 
 ```bash
 npm run dev
 ```
 
-5. Open:
+5. Open `http://localhost:3000`
 
-- `http://localhost:3000`
+## Deployment Notes
 
-## Notes
+- Keep all secrets in host environment variables (Render/GitHub/other host), never in Git.
+- Generated PDFs are written to `generated-pdfs/`.
+- Browser security does not allow automatic file attachment to Outlook compose; users attach generated PDF manually.
 
-- Default mode is mock Zoho data (`ZOHO_USE_MOCK=true`) for local testing.
-- Generated PDFs are stored in:
-  - `./generated-pdfs`
-- Email behavior:
-  - App creates PDF and opens Outlook compose draft in browser.
-  - Browser deeplinks cannot auto-attach files for security reasons; user attaches PDF manually.
-- If the Zoho response schema in your portal differs, adjust field mapping in:
-  - `./src/zohoClient.js`
-- To show your official brand logo in the dashboard header, place files at:
-  - `./public/assets/elegrow-logo-full.png`
-  - optional symbol only: `./public/assets/elegrow-symbol.png`
+## License
+
+MIT (see `LICENSE`).
