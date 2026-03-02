@@ -65,6 +65,9 @@ npm run dev
 - Keep all secrets in host environment variables (Render/GitHub/other host), never in Git.
 - Generated PDFs are written to `generated-pdfs/`.
 - Browser security does not allow automatic file attachment to Outlook compose; users attach generated PDF manually.
+- For GoDaddy VPS auto-deploy with GitHub Actions, see:
+  - `docs/DEPLOY_GODADDY_VPS.md`
+  - `.github/workflows/deploy-vps.yml`
 
 ## License
 
