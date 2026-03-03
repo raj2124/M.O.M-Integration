@@ -777,6 +777,11 @@ body {
   overflow: hidden;
 }
 
+.editor-header > :not(.hero-shapes) {
+  position: relative;
+  z-index: 2;
+}
+
 .editor-header::after {
   content: '';
   position: absolute;
@@ -787,6 +792,21 @@ body {
   border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 255, 255, 0.24), transparent 70%);
   pointer-events: none;
+  z-index: 1;
+}
+
+.editor-header .editor-shapes::before {
+  opacity: 0.72;
+}
+
+.editor-header .editor-shapes::after {
+  opacity: 0.58;
+}
+
+.editor-header .editor-shapes span {
+  border-color: rgba(194, 228, 250, 0.45);
+  background: rgba(190, 228, 251, 0.2);
+  animation-duration: 13.5s;
 }
 
 .editor-header h2 {

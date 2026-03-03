@@ -58,6 +58,43 @@ const mockProjectClientUsers = {
   ]
 };
 
+const mockProjectTasks = {
+  '1001': [
+    {
+      id: 't1001',
+      name: 'Finalize MOM template formatting',
+      status: 'In Progress',
+      ownerName: 'Rakesh Patel',
+      dueDate: '2026-03-07',
+      percentComplete: '65',
+      priority: 'High',
+      taskListName: 'Documentation'
+    },
+    {
+      id: 't1002',
+      name: 'Review action plan owners',
+      status: 'Open',
+      ownerName: 'Nidhi Shah',
+      dueDate: '2026-03-09',
+      percentComplete: '15',
+      priority: 'Medium',
+      taskListName: 'Review'
+    }
+  ],
+  '1002': [
+    {
+      id: 't2001',
+      name: 'Collect deployment dependencies',
+      status: 'Open',
+      ownerName: 'Arpit Jain',
+      dueDate: '2026-03-08',
+      percentComplete: '10',
+      priority: 'High',
+      taskListName: 'Deployment'
+    }
+  ]
+};
+
 let currentAccessToken = config.zoho.accessToken || '';
 let refreshInFlight = null;
 const GENERIC_CLIENT_LABELS = new Set(['', '-', 'allexternal', 'external', 'client', 'all external']);
@@ -457,6 +494,129 @@ function collectProjectDetail(payload) {
   }
 
   return null;
+}
+
+function extractTaskId(task) {
+  const candidates = [];
+  const keys = ['id_string', 'id', 'task_id', 'taskid', 'taskId'];
+  for (const key of keys) {
+    const value = asText(task?.[key]).trim();
+    if (value) {
+      candidates.push(value);
+    }
+  }
+
+  const selfUrl =
+    asText(task?.link?.self?.url) ||
+    asText(task?.links?.self?.href) ||
+    asText(task?.self?.url) ||
+    '';
+  if (selfUrl) {
+    const match = selfUrl.match(/\/tasks\/([^/?#]+)/i);
+    if (match && match[1]) {
+      candidates.push(match[1]);
+    }
+  }
+
+  if (!candidates.length) {
+    return '';
+  }
+
+  const unique = [...new Set(candidates)];
+  const numeric = unique.find((id) => /^\d{8,}$/.test(id));
+  if (numeric) {
+    return numeric;
+  }
+
+  return unique[0];
+}
+
+function collectTaskList(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  const keys = ['tasks', 'task', 'data', 'result', 'response', 'records', 'items'];
+  for (const key of keys) {
+    if (Array.isArray(payload[key])) {
+      return payload[key];
+    }
+    if (payload[key] && typeof payload[key] === 'object') {
+      const nested = collectTaskList(payload[key]);
+      if (nested.length > 0) {
+        return nested;
+      }
+    }
+  }
+
+  return [];
+}
+
+function normalizeTask(task) {
+  const id = extractTaskId(task);
+  const name =
+    asText(task?.name) ||
+    asText(task?.task_name) ||
+    asText(task?.title) ||
+    asText(task?.task_title) ||
+    '';
+  const status =
+    normalizeStageText(
+      readNestedText(task, ['status', 'status_name', 'task_status', 'state', 'status_details']) ||
+        asText(task?.status) ||
+        asText(task?.task_status) ||
+        asText(task?.state) ||
+        ''
+    ) || '';
+  const ownerName =
+    asText(task?.owner_name) ||
+    asText(task?.person_responsible_name) ||
+    readNestedText(task, ['owner', 'owner_details', 'assigned_to', 'created_by']) ||
+    '';
+  const dueDate =
+    asText(task?.due_date) ||
+    asText(task?.end_date) ||
+    asText(task?.due_date_format) ||
+    asText(task?.end_date_format) ||
+    asText(task?.due_date_long) ||
+    asText(task?.end_date_long) ||
+    '';
+  const startDate =
+    asText(task?.start_date) ||
+    asText(task?.start_date_format) ||
+    asText(task?.start_date_long) ||
+    '';
+  const percentComplete =
+    asText(task?.completed_percent) ||
+    asText(task?.percent_complete) ||
+    asText(task?.completion_percentage) ||
+    asText(task?.progress) ||
+    '';
+  const priority = asText(task?.priority) || asText(task?.priority_name) || '';
+  const taskListName = readNestedText(task, ['tasklist', 'task_list', 'tasklist_name']) || '';
+  const milestoneName = readNestedText(task, ['milestone', 'milestone_name']) || '';
+  const closedFlag =
+    String(task?.is_closed || task?.isclosed || task?.closed || '')
+      .trim()
+      .toLowerCase() === 'true';
+  const effectiveStatus = status || (closedFlag ? 'Closed' : '');
+
+  return {
+    id: asText(id),
+    name: asText(name),
+    status: asText(effectiveStatus),
+    ownerName: asText(ownerName),
+    dueDate: asText(dueDate),
+    startDate: asText(startDate),
+    percentComplete: asText(percentComplete),
+    priority: asText(priority),
+    taskListName: asText(taskListName),
+    milestoneName: asText(milestoneName)
+  };
 }
 
 function hasRefreshCredentials() {
@@ -962,6 +1122,86 @@ async function fetchProjectClientUsersFromZoho(projectId) {
   return filterUsersToClientUsers(allUsers);
 }
 
+async function fetchProjectTasksFromZoho(projectId, options = {}) {
+  await ensureZohoCredentials();
+  const projectBase = buildZohoProjectsBasePath();
+  const endpointCandidates = [`${projectBase}/${projectId}/tasks/`, `${projectBase}/${projectId}/tasks`];
+
+  const query = String(options.query || '').trim().toLowerCase();
+  const statusFilter = normalizeStageText(options.status || '').toLowerCase();
+  const startIndex = Math.max(1, Number.parseInt(options.index || '1', 10) || 1);
+  const range = Math.min(200, Math.max(1, Number.parseInt(options.range || '200', 10) || 200));
+  const maxPages = 50;
+  const uniqueMap = new Map();
+
+  let endpointWorked = false;
+  let lastError = null;
+
+  for (const endpoint of endpointCandidates) {
+    let index = startIndex;
+    try {
+      for (let page = 0; page < maxPages; page += 1) {
+        const params = { index, range };
+        if (statusFilter) {
+          params.status = statusFilter;
+        }
+
+        const response = await requestZohoGet(endpoint, params, true);
+        endpointWorked = true;
+        const pageTasks = collectTaskList(response.data)
+          .map(normalizeTask)
+          .filter((task) => task.id || task.name);
+
+        if (!pageTasks.length) {
+          break;
+        }
+
+        let addedInPage = 0;
+        for (const task of pageTasks) {
+          const key = `${task.id}::${task.name}`;
+          if (!uniqueMap.has(key)) {
+            uniqueMap.set(key, task);
+            addedInPage += 1;
+          }
+        }
+
+        if (addedInPage === 0 || pageTasks.length < range) {
+          break;
+        }
+
+        index += 1;
+      }
+
+      // Stop after first working endpoint to avoid duplicate calls.
+      break;
+    } catch (error) {
+      lastError = error;
+      // fallback endpoint for variants returning 400/404
+      if (!isAxiosStatus(error, 400) && !isAxiosStatus(error, 404)) {
+        throw new Error(toZohoErrorMessage(error));
+      }
+    }
+  }
+
+  if (!endpointWorked && lastError) {
+    throw new Error(toZohoErrorMessage(lastError));
+  }
+
+  let tasks = Array.from(uniqueMap.values());
+  if (statusFilter) {
+    tasks = tasks.filter((task) => String(task.status || '').toLowerCase().includes(statusFilter));
+  }
+  if (query) {
+    tasks = tasks.filter((task) =>
+      [task.id, task.name, task.status, task.ownerName, task.taskListName, task.milestoneName]
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    );
+  }
+  return tasks;
+}
+
 async function resolveProjectReferenceToId(projectRef) {
   const raw = String(projectRef || '').trim();
   if (!raw) {
@@ -1053,8 +1293,37 @@ async function getProjectClientUsers(projectId) {
   return fetchProjectClientUsersFromZoho(resolvedId);
 }
 
+async function getProjectTasks(projectRef, options = {}) {
+  const id = String(projectRef || '').trim();
+  if (!id) {
+    throw new Error('Project ID is required to fetch Zoho project tasks.');
+  }
+
+  if (config.zoho.useMock) {
+    const query = String(options.query || '').trim().toLowerCase();
+    const status = String(options.status || '').trim().toLowerCase();
+    let tasks = mockProjectTasks[id] || [];
+    if (status) {
+      tasks = tasks.filter((task) => String(task.status || '').toLowerCase().includes(status));
+    }
+    if (query) {
+      tasks = tasks.filter((task) =>
+        [task.id, task.name, task.status, task.ownerName, task.taskListName]
+          .join(' ')
+          .toLowerCase()
+          .includes(query)
+      );
+    }
+    return tasks;
+  }
+
+  const resolvedId = await resolveProjectReferenceToId(id);
+  return fetchProjectTasksFromZoho(resolvedId, options);
+}
+
 module.exports = {
   getProjects,
   getProjectUsers,
-  getProjectClientUsers
+  getProjectClientUsers,
+  getProjectTasks
 };

@@ -3,7 +3,7 @@ const fs = require('fs');
 const express = require('express');
 
 const config = require('./config');
-const { getProjects, getProjectUsers, getProjectClientUsers } = require('./zohoClient');
+const { getProjects, getProjectUsers, getProjectClientUsers, getProjectTasks } = require('./zohoClient');
 const { sanitizeMomPayload, validateMomPayload } = require('./momTemplate');
 const { generateMomPdf } = require('./pdfService');
 
@@ -154,6 +154,30 @@ app.get('/api/zoho/projects/:projectId/client-users', async (req, res) => {
       success: true,
       users: [],
       message: error.message || 'Zoho client users not available for this project.'
+    });
+  }
+});
+
+app.get('/api/zoho/projects/:projectId/tasks', async (req, res) => {
+  try {
+    const projectId = String(req.params.projectId || '').trim();
+    const tasks = await getProjectTasks(projectId, {
+      query: String(req.query.query || '').trim(),
+      status: String(req.query.status || '').trim(),
+      index: req.query.index,
+      range: req.query.range
+    });
+
+    res.json({
+      success: true,
+      tasks
+    });
+  } catch (error) {
+    const projectId = String(req.params.projectId || '').trim();
+    res.status(500).json({
+      success: false,
+      message:
+        error.message || `Failed to fetch Zoho project tasks for project ID: ${projectId || '(empty)'}`
     });
   }
 });
