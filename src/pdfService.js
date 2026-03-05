@@ -219,24 +219,62 @@ function drawSectionTitle(doc, title, minFollowingHeight = 0, authenticity = nul
   doc.y = y + 30;
 }
 
+function shouldForceSingleLine(label) {
+  const text = String(label || '').toLowerCase();
+  return (
+    text.includes('zoho project number') ||
+    text.includes('project no / work order no') ||
+    text.includes('project number')
+  );
+}
+
+function getFittedSingleLineFontSize(doc, value, maxWidth, preferred = 10, min = 6.8) {
+  const raw = String(value || '');
+  let fontSize = preferred;
+  while (fontSize > min) {
+    doc.fontSize(fontSize);
+    if (doc.widthOfString(raw) <= maxWidth) {
+      return fontSize;
+    }
+    fontSize -= 0.2;
+  }
+  return min;
+}
+
 function drawTwoColumnRows(doc, rows, authenticity = null) {
   const x = PAGE.margin;
   const width = PAGE.contentWidth;
   const halfWidth = width / 2;
   const labelWidth = 122;
+  const compactLabelWidth = 106;
   const pad = 8;
 
   rows.forEach((row) => {
     const leftValue = safeText(row.leftValue);
     const rightValue = safeText(row.rightValue);
+    const leftSingleLine = shouldForceSingleLine(row.leftLabel);
+    const rightSingleLine = shouldForceSingleLine(row.rightLabel);
+    const leftLabelWidth = leftSingleLine ? compactLabelWidth : labelWidth;
+    const rightLabelWidth = rightSingleLine ? compactLabelWidth : labelWidth;
+    const leftValueWidth = halfWidth - leftLabelWidth - pad * 2;
+    const rightValueWidth = halfWidth - rightLabelWidth - pad * 2;
 
-    doc.font('Helvetica').fontSize(10);
-    const leftValueHeight = doc.heightOfString(leftValue, {
-      width: halfWidth - labelWidth - pad * 2
-    });
-    const rightValueHeight = doc.heightOfString(rightValue, {
-      width: halfWidth - labelWidth - pad * 2
-    });
+    doc.font('Helvetica');
+    const leftFontSize = leftSingleLine ? getFittedSingleLineFontSize(doc, leftValue, leftValueWidth) : 10;
+    const rightFontSize = rightSingleLine ? getFittedSingleLineFontSize(doc, rightValue, rightValueWidth) : 10;
+
+    doc.fontSize(leftFontSize);
+    const leftValueHeight = leftSingleLine
+      ? leftFontSize + 2
+      : doc.heightOfString(leftValue, {
+          width: leftValueWidth
+        });
+    doc.fontSize(rightFontSize);
+    const rightValueHeight = rightSingleLine
+      ? rightFontSize + 2
+      : doc.heightOfString(rightValue, {
+          width: rightValueWidth
+        });
     const rowHeight = Math.max(30, Math.max(leftValueHeight, rightValueHeight) + 14);
 
     ensurePageSpace(doc, rowHeight + 4, authenticity);
@@ -258,14 +296,16 @@ function drawTwoColumnRows(doc, rows, authenticity = null) {
       .fontSize(9.5)
       .fillColor(COLORS.brandBlueDark)
       .text(`${row.leftLabel}:`, x + pad, y + 8, {
-        width: labelWidth - pad
+        width: leftLabelWidth - pad
       });
     doc
       .font('Helvetica')
-      .fontSize(10)
+      .fontSize(leftFontSize)
       .fillColor(COLORS.text)
-      .text(leftValue, x + labelWidth, y + 8, {
-        width: halfWidth - labelWidth - pad * 2
+      .text(leftValue, x + leftLabelWidth, y + 8, {
+        width: leftValueWidth,
+        lineBreak: !leftSingleLine,
+        ellipsis: leftSingleLine
       });
 
     doc
@@ -273,14 +313,16 @@ function drawTwoColumnRows(doc, rows, authenticity = null) {
       .fontSize(9.5)
       .fillColor(COLORS.brandBlueDark)
       .text(`${row.rightLabel}:`, x + halfWidth + pad, y + 8, {
-        width: labelWidth - pad
+        width: rightLabelWidth - pad
       });
     doc
       .font('Helvetica')
-      .fontSize(10)
+      .fontSize(rightFontSize)
       .fillColor(COLORS.text)
-      .text(rightValue, x + halfWidth + labelWidth, y + 8, {
-        width: halfWidth - labelWidth - pad * 2
+      .text(rightValue, x + halfWidth + rightLabelWidth, y + 8, {
+        width: rightValueWidth,
+        lineBreak: !rightSingleLine,
+        ellipsis: rightSingleLine
       });
 
     doc.y = y + rowHeight;
