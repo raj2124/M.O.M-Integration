@@ -102,7 +102,7 @@ let currentProjectTasks = [];
 let isProjectTasksLoading = false;
 let projectTasksRequestSeq = 0;
 const projectTasksCache = new Map();
-let momGeneratedBy = 'ETPL AI_M.O.M System';
+let momGeneratedBy = 'ETPL_AI M.O.M System';
 let recordsSearchTimer;
 let recordsCache = [];
 let activeRecordExport = null;
@@ -383,7 +383,8 @@ async function refreshHealthStatus() {
     }
 
     kpiZohoMode.textContent = data.zohoMode === 'mock' ? 'Mock Mode' : 'Live Mode';
-    momGeneratedBy = String(data.generatedBy || 'ETPL AI_M.O.M System').trim() || 'ETPL AI_M.O.M System';
+    momGeneratedBy =
+      String(data.generatedBy || 'ETPL_AI M.O.M System').trim() || 'ETPL_AI M.O.M System';
     renderAuthenticityLine();
     if (data.emailMode === 'outlook-draft') {
       kpiEmailMode.textContent = 'Outlook Draft';
@@ -1360,7 +1361,7 @@ function encodeOutlookQueryComponent(value) {
   });
 }
 
-function buildOutlookComposeUrl({ to = '', cc = '', subject = '', body = '' }) {
+function buildOutlookComposeUrlDesktop({ to = '', cc = '', subject = '', body = '' }) {
   const queryParts = [];
   const trimmedTo = String(to || '').trim();
   const trimmedCc = String(cc || '').trim();
@@ -1373,6 +1374,36 @@ function buildOutlookComposeUrl({ to = '', cc = '', subject = '', body = '' }) {
   queryParts.push(`subject=${encodeOutlookQueryComponent(subject)}`);
   queryParts.push(`body=${encodeOutlookQueryComponent(body)}`);
   return `https://outlook.office.com/mail/deeplink/compose?${queryParts.join('&')}`;
+}
+
+function buildOutlookComposeUrlMobile({ to = '', cc = '', subject = '', body = '' }) {
+  const queryParts = ['path=%2Fmail%2Faction%2Fcompose', 'rru=compose'];
+  const trimmedTo = String(to || '').trim();
+  const trimmedCc = String(cc || '').trim();
+  if (trimmedTo) {
+    queryParts.push(`to=${encodeOutlookQueryComponent(trimmedTo)}`);
+  }
+  if (trimmedCc) {
+    queryParts.push(`cc=${encodeOutlookQueryComponent(trimmedCc)}`);
+  }
+  queryParts.push(`subject=${encodeOutlookQueryComponent(subject)}`);
+  queryParts.push(`body=${encodeOutlookQueryComponent(body)}`);
+  return `https://outlook.office.com/mail/?${queryParts.join('&')}`;
+}
+
+function isMobileDevice() {
+  const ua = String(navigator.userAgent || '');
+  const touchPoints = Number(navigator.maxTouchPoints || 0);
+  return /iPhone|iPad|iPod|Android|Mobile|Opera Mini|IEMobile/i.test(ua) || touchPoints > 1;
+}
+
+function getPreferredOutlookComposeUrl(draft = {}) {
+  const mobileUrl = String(draft.outlookComposeMobileUrl || '').trim();
+  const desktopUrl = String(draft.outlookComposeUrl || '').trim();
+  if (isMobileDevice() && mobileUrl) {
+    return mobileUrl;
+  }
+  return desktopUrl || mobileUrl;
 }
 
 function buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl) {
@@ -1392,7 +1423,10 @@ function buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl) {
   });
   const body = String(options.emailBody || '').trim() || defaultBody;
 
-  return buildOutlookComposeUrl({ to, cc, subject, body });
+  return {
+    outlookComposeUrl: buildOutlookComposeUrlDesktop({ to, cc, subject, body }),
+    outlookComposeMobileUrl: buildOutlookComposeUrlMobile({ to, cc, subject, body })
+  };
 }
 
 function getRecordOutputBadges(record) {
@@ -1943,17 +1977,22 @@ confirmRecordExportBtn.addEventListener('click', () => {
   }
 
   const needsPdfWindow = Boolean(options.printPdf || (options.generatePdf && !options.sendEmail));
+  const mobileDevice = isMobileDevice();
   const preopenedPdfWindow = needsPdfWindow ? window.open('about:blank', '_blank') : null;
-  const preopenedOutlookWindow = options.sendEmail ? window.open('about:blank', '_blank') : null;
+  const preopenedOutlookWindow =
+    options.sendEmail && !mobileDevice ? window.open('about:blank', '_blank') : null;
 
   try {
     if (options.sendEmail) {
-      const outlookUrl = buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl);
+      const draftTargets = buildOutlookDraftUrlForRecord(record, options, pdfAbsoluteUrl);
+      const outlookUrl = getPreferredOutlookComposeUrl(draftTargets);
       if (preopenedOutlookWindow && !preopenedOutlookWindow.closed) {
         preopenedOutlookWindow.location.href = outlookUrl;
       } else {
-        const win = window.open(outlookUrl, '_blank', 'noopener');
-        if (!win) {
+        const win = !mobileDevice ? window.open(outlookUrl, '_blank', 'noopener') : null;
+        if (win) {
+          // no-op
+        } else {
           window.location.href = outlookUrl;
           showToast('Opening Outlook in current tab (popup was blocked).');
         }
@@ -2013,8 +2052,10 @@ confirmSubmitBtn.addEventListener('click', async () => {
   confirmSubmitBtn.textContent = 'Submitting...';
 
   const needsPdfWindow = Boolean(options.printPdf || (options.generatePdf && !options.sendEmail));
+  const mobileDevice = isMobileDevice();
   const preopenedPdfWindow = needsPdfWindow ? window.open('about:blank', '_blank') : null;
-  const preopenedOutlookWindow = options.sendEmail ? window.open('about:blank', '_blank') : null;
+  const preopenedOutlookWindow =
+    options.sendEmail && !mobileDevice ? window.open('about:blank', '_blank') : null;
 
   try {
     const response = await fetch('/api/mom/submit', {
@@ -2046,13 +2087,13 @@ confirmSubmitBtn.addEventListener('click', async () => {
 
     if (options.sendEmail) {
       const emailDraft = result.emailDraft || {};
-      const outlookUrl = String(emailDraft.outlookComposeUrl || '').trim();
+      const outlookUrl = getPreferredOutlookComposeUrl(emailDraft);
       if (!outlookUrl) {
         showToast('Outlook draft URL unavailable from server.', 'error');
       } else if (preopenedOutlookWindow && !preopenedOutlookWindow.closed) {
         preopenedOutlookWindow.location.href = outlookUrl;
       } else {
-        const outlookWindow = window.open(outlookUrl, '_blank', 'noopener');
+        const outlookWindow = !mobileDevice ? window.open(outlookUrl, '_blank', 'noopener') : null;
         if (!outlookWindow) {
           window.location.href = outlookUrl;
           showToast('Opening Outlook in current tab (popup was blocked).');

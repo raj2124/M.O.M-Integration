@@ -42,7 +42,7 @@ function buildAuthenticityMetadata() {
   const generatedAt = formatAuthTimestamp(generatedAtDate);
   const documentId = generateDocumentId(generatedAtDate);
   const generatedBy =
-    String(config.app.generatedBy || 'ETPL AI_M.O.M System').trim() || 'ETPL AI_M.O.M System';
+    String(config.app.generatedBy || 'ETPL_AI M.O.M System').trim() || 'ETPL_AI M.O.M System';
   return {
     statement: DIGITAL_DECLARATION_STATEMENT,
     documentId,
@@ -137,7 +137,7 @@ function encodeOutlookQueryComponent(value) {
   });
 }
 
-function buildOutlookComposeUrl({ to = '', cc = '', subject = '', body = '' }) {
+function buildOutlookComposeUrlDesktop({ to = '', cc = '', subject = '', body = '' }) {
   const queryParts = [];
   const trimmedTo = String(to || '').trim();
   const trimmedCc = String(cc || '').trim();
@@ -150,6 +150,21 @@ function buildOutlookComposeUrl({ to = '', cc = '', subject = '', body = '' }) {
   queryParts.push(`subject=${encodeOutlookQueryComponent(subject)}`);
   queryParts.push(`body=${encodeOutlookQueryComponent(body)}`);
   return `https://outlook.office.com/mail/deeplink/compose?${queryParts.join('&')}`;
+}
+
+function buildOutlookComposeUrlMobile({ to = '', cc = '', subject = '', body = '' }) {
+  const queryParts = ['path=%2Fmail%2Faction%2Fcompose', 'rru=compose'];
+  const trimmedTo = String(to || '').trim();
+  const trimmedCc = String(cc || '').trim();
+  if (trimmedTo) {
+    queryParts.push(`to=${encodeOutlookQueryComponent(trimmedTo)}`);
+  }
+  if (trimmedCc) {
+    queryParts.push(`cc=${encodeOutlookQueryComponent(trimmedCc)}`);
+  }
+  queryParts.push(`subject=${encodeOutlookQueryComponent(subject)}`);
+  queryParts.push(`body=${encodeOutlookQueryComponent(body)}`);
+  return `https://outlook.office.com/mail/?${queryParts.join('&')}`;
 }
 
 function buildOutlookDraft({ mom, options, pdfUrl }) {
@@ -202,7 +217,8 @@ function buildOutlookDraft({ mom, options, pdfUrl }) {
     subject,
     body,
     pdfAbsoluteUrl,
-    outlookComposeUrl: buildOutlookComposeUrl({ to, cc, subject, body }),
+    outlookComposeUrl: buildOutlookComposeUrlDesktop({ to, cc, subject, body }),
+    outlookComposeMobileUrl: buildOutlookComposeUrlMobile({ to, cc, subject, body }),
     attachmentAutoSupported: false,
     attachmentNote:
       'Attachment cannot be auto-added by browser deeplink. The generated PDF is opened for manual attachment.'
@@ -219,7 +235,7 @@ app.get('/api/health', (_req, res) => {
     timestamp: new Date().toISOString(),
     zohoMode: config.zoho.useMock ? 'mock' : 'live',
     zohoAutoRefreshConfigured,
-    generatedBy: String(config.app.generatedBy || 'ETPL AI_M.O.M System'),
+    generatedBy: String(config.app.generatedBy || 'ETPL_AI M.O.M System'),
     emailEnabled: true,
     emailMode: 'outlook-draft',
     recordsRetentionDays: recordsStore.settings.retentionDays,

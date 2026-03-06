@@ -8,6 +8,7 @@ const generatedDir = path.join(rootDir, 'generated-pdfs');
 const dataDir = path.join(rootDir, 'data');
 const appHost = process.env.APP_HOST || '127.0.0.1';
 const appPort = Number.parseInt(process.env.PORT || '3000', 10);
+const DEFAULT_GENERATED_BY = 'ETPL_AI M.O.M System';
 
 function toBool(value, defaultValue = false) {
   if (value === undefined || value === null || value === '') {
@@ -23,7 +24,7 @@ const config = {
     rootDir,
     generatedDir,
     baseUrl: process.env.APP_BASE_URL || `http://${appHost}:${appPort}`,
-    generatedBy: process.env.MOM_GENERATED_BY || 'ETPL AI_M.O.M System'
+    generatedBy: DEFAULT_GENERATED_BY
   },
   records: {
     dataDir,
