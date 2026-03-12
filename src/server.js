@@ -300,19 +300,19 @@ async function buildEmailDraft({ mom, options, pdfUrl, pdfFileName = '' }) {
         to: payload.to,
         cc: payload.cc,
         subject: payload.subject,
-        body: payload.bodyText
+        body: payload.composeBodyText
       }),
       outlookComposeMobileUrl: buildOutlookComposeUrlMobile({
         to: payload.to,
         cc: payload.cc,
         subject: payload.subject,
-        body: payload.bodyText
+        body: payload.composeBodyText
       }),
       outlookAppComposeUrl: buildOutlookAppComposeUrl({
         to: payload.to,
         cc: payload.cc,
         subject: payload.subject,
-        body: payload.bodyText
+        body: payload.composeBodyText
       })
     };
   } catch (error) {

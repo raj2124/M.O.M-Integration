@@ -1415,6 +1415,10 @@ function isMobileDevice() {
   return /iPhone|iPad|iPod|Android|Mobile|Opera Mini|IEMobile/i.test(ua) || touchPoints > 1;
 }
 
+function isAndroidDevice() {
+  return /Android/i.test(String(navigator.userAgent || ''));
+}
+
 function getOutlookComposeUrlCandidates(draft = {}) {
   const mobileUrl = String(draft.outlookComposeMobileUrl || '').trim();
   const desktopUrl = String(draft.outlookComposeUrl || '').trim();
@@ -1456,12 +1460,34 @@ function openMobileBrowserComposeTarget(targetUrl = '') {
   return true;
 }
 
+function buildAndroidOutlookIntentUrl(appUrl = '', browserFallbackUrl = '') {
+  const appTarget = String(appUrl || '').trim();
+  if (!appTarget.toLowerCase().startsWith('ms-outlook://')) {
+    return '';
+  }
+  const route = appTarget.replace(/^ms-outlook:\/\//i, '');
+  if (!route) {
+    return '';
+  }
+  const fallback = String(browserFallbackUrl || '').trim();
+  const fallbackPart = fallback ? `;S.browser_fallback_url=${encodeURIComponent(fallback)}` : '';
+  return `intent://${route}#Intent;scheme=ms-outlook;package=com.microsoft.office.outlook${fallbackPart};end`;
+}
+
 function launchMobileAppComposeWithFallback({ appUrl = '', browserUrl = '' } = {}) {
   const appTarget = String(appUrl || '').trim();
   const browserTarget = String(browserUrl || '').trim();
 
   if (!appTarget) {
     return openMobileBrowserComposeTarget(browserTarget);
+  }
+
+  if (isAndroidDevice()) {
+    const intentUrl = buildAndroidOutlookIntentUrl(appTarget, browserTarget);
+    if (intentUrl) {
+      window.location.href = intentUrl;
+      return true;
+    }
   }
 
   let becameHidden = false;
@@ -1503,7 +1529,7 @@ function launchMobileAppComposeWithFallback({ appUrl = '', browserUrl = '' } = {
     } else {
       showToast('Outlook app did not open. Please open mail app manually.', 'error');
     }
-  }, 1200);
+  }, 1800);
 
   window.location.href = appTarget;
   return true;
