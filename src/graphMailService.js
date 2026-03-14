@@ -91,13 +91,18 @@ function resolveGraphErrorMessage(error) {
 
 function parseGraphError(error) {
   const status = error?.response?.status || null;
-  const graphCode = String(error?.response?.data?.error?.code || '').trim();
-  const graphMessage = String(error?.response?.data?.error?.message || '').trim();
+  const responseData = error?.response?.data || {};
+  const oauthError =
+    typeof responseData?.error === 'string'
+      ? String(responseData.error).trim()
+      : String(responseData?.error?.code || '').trim();
+  const oauthErrorDescription = String(responseData?.error_description || '').trim();
+  const graphMessage = String(responseData?.error?.message || '').trim();
   const requestId = String(error?.response?.headers?.['request-id'] || error?.response?.headers?.['x-ms-request-id'] || '').trim();
   return {
     status,
-    code: graphCode || '',
-    message: graphMessage || error?.message || 'Microsoft Graph request failed.',
+    code: oauthError || '',
+    message: oauthErrorDescription || graphMessage || error?.message || 'Microsoft Graph request failed.',
     requestId: requestId || ''
   };
 }
