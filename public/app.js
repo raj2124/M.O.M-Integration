@@ -1694,9 +1694,17 @@ function openEmailDraftFromResponse(emailDraft = {}, preopenedWindow = null) {
   const composeUrl = String(candidates[0] || '').trim();
   const isMobile = isMobileDevice();
 
-  // On mobile browsers, same-tab navigation is more reliable than popup windows.
-  // Also prefer compose deeplink over graph webLink to avoid landing in inbox view.
+  // For graph-draft on mobile, open the actual created draft URL first.
+  // This avoids fragile compose URI behavior when server-side draft is healthy.
   if (isMobile) {
+    if (mode === 'graph-draft' && graphUrl) {
+      const mobileWindow = window.open(graphUrl, '_blank', 'noopener,noreferrer');
+      if (!mobileWindow) {
+        window.location.href = graphUrl;
+      }
+      return true;
+    }
+
     const mobileTarget = composeUrl || graphUrl || '';
     if (mobileTarget) {
       const mobileWindow = window.open(mobileTarget, '_blank', 'noopener,noreferrer');
@@ -1731,6 +1739,19 @@ function openEmailDraftFromResponse(emailDraft = {}, preopenedWindow = null) {
   }
 
   return openOutlookDraftWithFallbackUrls(candidates, preopenedWindow);
+}
+
+function openDraftForCurrentDevice(emailDraft = {}, preopenedOutlookWindow = null) {
+  const isMobile = isMobileDevice();
+  const mode = String(emailDraft.mode || '').trim().toLowerCase();
+
+  if (isMobile && mode === 'graph-draft') {
+    return openEmailDraftFromResponse(emailDraft, null);
+  }
+  if (isMobile) {
+    return openMobileMailAssist(emailDraft);
+  }
+  return openEmailDraftFromResponse(emailDraft, preopenedOutlookWindow);
 }
 
 function getRecordOutputBadges(record) {
@@ -2374,16 +2395,14 @@ confirmRecordExportBtn.addEventListener('click', async () => {
       }
 
       const emailDraft = draftData.emailDraft || {};
-      const opened = isMobileDevice()
-        ? openMobileMailAssist(emailDraft)
-        : openEmailDraftFromResponse(emailDraft, preopenedOutlookWindow);
+      const opened = openDraftForCurrentDevice(emailDraft, preopenedOutlookWindow);
       if (!opened) {
         showToast('Popup blocked for Outlook draft. Please allow popups and retry.', 'error');
       }
       const draftMode = String(emailDraft.mode || '').trim();
       if (draftMode === 'graph-draft') {
         if (isMobileDevice()) {
-          showToast('Server draft created. Tap Open Outlook App in Mobile Mail Assist.');
+          showToast('Server draft created and opened in Outlook web.');
         } else {
           showToast('Microsoft Outlook draft created and opened.');
         }
@@ -2486,16 +2505,14 @@ confirmSubmitBtn.addEventListener('click', async () => {
       if (!String(emailDraft.mode || '').trim()) {
         showToast('Outlook draft URL unavailable from server.', 'error');
       } else {
-        const opened = isMobileDevice()
-          ? openMobileMailAssist(emailDraft)
-          : openEmailDraftFromResponse(emailDraft, preopenedOutlookWindow);
+        const opened = openDraftForCurrentDevice(emailDraft, preopenedOutlookWindow);
         if (!opened) {
           showToast('Popup blocked for Outlook draft. Please allow popups and retry.', 'error');
         }
       }
       if (String(emailDraft.mode || '').trim().toLowerCase() === 'graph-draft') {
         if (isMobileDevice()) {
-          showToast('Server draft created. Tap Open Outlook App in Mobile Mail Assist.');
+          showToast('Server draft created and opened in Outlook web.');
         } else {
           showToast('Microsoft Outlook draft created and opened.');
         }
