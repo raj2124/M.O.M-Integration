@@ -376,9 +376,16 @@ async function runGraphDiagnostics(config, options = {}) {
     diagnostics.mailboxCheck.error = parsed;
     diagnostics.hints.push('Mailbox lookup failed. Ensure MS_GRAPH_MAILBOX_USER exists and app has permission to access it.');
     if (parsed.status === 403) {
-      diagnostics.hints.push('403 indicates missing Graph API application permissions or missing admin consent.');
+      diagnostics.hints.push(
+        '403 indicates missing Graph API application permissions, missing admin consent, or an Exchange application access policy blocking this mailbox.'
+      );
+      diagnostics.hints.push(
+        'For mailbox profile read, add Microsoft Graph Application permission User.Read.All (or Directory.Read.All) and grant admin consent.'
+      );
     }
-    return diagnostics;
+    if (!writeProbe) {
+      return diagnostics;
+    }
   }
 
   if (writeProbe) {
@@ -418,6 +425,11 @@ async function runGraphDiagnostics(config, options = {}) {
       diagnostics.draftProbe.ok = false;
       diagnostics.draftProbe.error = parseGraphError(error);
       diagnostics.hints.push('Draft probe failed. Confirm Mail.ReadWrite application permission and mailbox access.');
+      if (diagnostics.draftProbe.error?.status === 403) {
+        diagnostics.hints.push(
+          'If Mail.ReadWrite is already consented, check Exchange Online Application Access Policies for this app and mailbox.'
+        );
+      }
       return diagnostics;
     }
   }
