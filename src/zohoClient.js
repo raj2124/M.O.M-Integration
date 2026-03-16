@@ -33,6 +33,21 @@ const mockProjectUsers = {
   ]
 };
 
+const mockPortalUsers = Array.from(
+  Object.values(mockProjectUsers)
+    .flat()
+    .reduce((map, user) => {
+      const normalizedEmail = String(user.email || '').trim().toLowerCase();
+      const normalizedName = String(user.displayName || '').trim().toLowerCase();
+      const key = `${user.id || ''}::${normalizedEmail}::${normalizedName}`;
+      if (!map.has(key)) {
+        map.set(key, user);
+      }
+      return map;
+    }, new Map())
+    .values()
+);
+
 const mockProjectClientUsers = {
   '1001': [
     {
@@ -661,7 +676,18 @@ async function refreshZohoAccessToken() {
 
     const token = response?.data?.access_token;
     if (!token) {
-      throw new Error('Zoho refresh succeeded but no access_token was returned.');
+      const payload = response?.data;
+      const details =
+        payload && typeof payload === 'object'
+          ? payload.error ||
+            payload.error_description ||
+            payload.message ||
+            payload.code ||
+            JSON.stringify(payload)
+          : '';
+      throw new Error(
+        `Zoho refresh did not return access_token.${details ? ` Response: ${details}` : ''}`
+      );
     }
 
     currentAccessToken = token;
@@ -743,6 +769,10 @@ function buildZohoProjectsBasePath() {
   }
 
   return `${config.zoho.baseUrl.replace(/\/+$/, '')}/portal/${config.zoho.portalId}/projects`;
+}
+
+function buildZohoPortalUsersBasePath() {
+  return `${config.zoho.baseUrl.replace(/\/+$/, '')}/portal/${config.zoho.portalId}/users`;
 }
 
 async function requestZohoGet(url, params = {}, allowRetry = true) {
@@ -1074,6 +1104,60 @@ async function fetchProjectUsersFromZoho(projectId) {
   throw new Error(toZohoErrorMessage(lastError));
 }
 
+async function fetchPortalUsersFromZoho() {
+  await ensureZohoCredentials();
+  const usersBase = buildZohoPortalUsersBasePath();
+  const endpoints = [`${usersBase}/`, usersBase];
+  const unique = new Map();
+  let endpointWorked = false;
+  let lastError = null;
+
+  for (const endpoint of endpoints) {
+    let index = 1;
+    try {
+      for (let page = 0; page < 25; page += 1) {
+        const response = await requestZohoGet(endpoint, { index, range: 200 }, true);
+        endpointWorked = true;
+        const users = collectUserList(response.data).map(normalizeUser);
+
+        if (!users.length) {
+          break;
+        }
+
+        for (const user of users) {
+          if (!user.displayName) {
+            continue;
+          }
+          const key = `${user.id}::${user.email}::${user.displayName}`;
+          if (!unique.has(key)) {
+            unique.set(key, user);
+          }
+        }
+
+        if (users.length < 200) {
+          break;
+        }
+        index += 1;
+      }
+
+      if (endpointWorked) {
+        break;
+      }
+    } catch (error) {
+      lastError = error;
+      if (!isAxiosStatus(error, 404) && !isAxiosStatus(error, 400)) {
+        throw new Error(toZohoErrorMessage(error));
+      }
+    }
+  }
+
+  if (!endpointWorked && lastError) {
+    throw new Error(toZohoErrorMessage(lastError));
+  }
+
+  return filterUsersToOrgDomain(Array.from(unique.values()));
+}
+
 async function requestClientUsersFromEndpoints(projectId) {
   const projectBase = buildZohoProjectsBasePath();
   const endpoints = [
@@ -1276,6 +1360,14 @@ async function getProjectUsers(projectId) {
   return filterUsersToOrgDomain(users);
 }
 
+async function getPortalUsers() {
+  if (config.zoho.useMock) {
+    return filterUsersToOrgDomain(mockPortalUsers);
+  }
+
+  return fetchPortalUsersFromZoho();
+}
+
 async function getProjectClientUsers(projectId) {
   const id = String(projectId || '').trim();
   if (!id) {
@@ -1320,6 +1412,7 @@ async function getProjectTasks(projectRef, options = {}) {
 
 module.exports = {
   getProjects,
+  getPortalUsers,
   getProjectUsers,
   getProjectClientUsers,
   getProjectTasks
