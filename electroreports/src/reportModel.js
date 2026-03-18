@@ -535,8 +535,7 @@ function summarizeTowerGroups(groups) {
       impedanceCount: impedanceValues.length,
       currentCount: currentValues.length,
       totalImpedanceZt: impedanceValues.length === TOWER_FOOT_POINTS.length ? round(impedanceValues.reduce((sum, value) => sum + value, 0), 2) : null,
-      totalCurrentItotal:
-        currentValues.length === TOWER_FOOT_POINTS.length ? round(currentValues.reduce((sum, value) => sum + value, 0) / 1000, 4) : null,
+      totalCurrentItotal: currentValues.length === TOWER_FOOT_POINTS.length ? round(currentValues.reduce((sum, value) => sum + value, 0), 2) : null,
       hasAnyInput
     });
   });
@@ -546,7 +545,7 @@ function summarizeTowerGroups(groups) {
 
 function deriveTowerFootingAssessment(group, groupSummary) {
   const standard = STANDARD_GUIDANCE.towerFootingResistance;
-  const zsat = asLooseNumber(group?.standardTolerableImpedanceZsat) ?? 10;
+  const zsat = 10;
   const totalImpedanceZt = groupSummary?.totalImpedanceZt ?? null;
   const totalCurrentItotal = groupSummary?.totalCurrentItotal ?? null;
   let status = { label: 'Pending', tone: 'neutral' };
@@ -790,7 +789,7 @@ function normalizeReportInput(payload) {
   const normalizedTowerFootingGroups = normalizeTowerFootingGroups(input?.towerFootingResistance).map((group, index) => ({
     ...group,
     srNo: asTrimmedString(group.srNo) || String(index + 1),
-    standardTolerableImpedanceZsat: group.standardTolerableImpedanceZsat || '10'
+    standardTolerableImpedanceZsat: '10'
   }));
 
   const towerGroupSummaries = summarizeTowerGroups(normalizedTowerFootingGroups);

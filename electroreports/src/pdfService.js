@@ -80,13 +80,10 @@ function getReportTitle(report) {
   if (!selected.length) {
     return 'ElectroReports Assessment';
   }
-  if (
-    selected.every((test) =>
-      ['soilResistivity', 'electrodeResistance', 'continuityTest', 'loopImpedanceTest', 'prospectiveFaultCurrent', 'riserIntegrityTest', 'earthContinuityTest', 'towerFootingResistance'].includes(
-        test.id
-      )
-    )
-  ) {
+  if (selected.length === 1) {
+    return selected[0].label;
+  }
+  if (selected.length > 1) {
     return 'Earthing System Health Assessment';
   }
   return 'Electrical Measurement Assessment';
@@ -880,7 +877,7 @@ function renderTowerFootingSection(doc, report, drawChrome) {
   drawSubsectionParagraph(
     doc,
     'Objective',
-    'Assess each tower location by summing the 4 footing impedance readings to obtain Zt and summing the 4 footing current readings to obtain Itotal in amperes.',
+    'Assess each tower location by summing the 4 footing impedance readings to obtain Zt and summing the 4 footing current readings to obtain the tower current total.',
     drawChrome
   );
   drawSubsectionParagraph(
@@ -898,7 +895,7 @@ function renderTowerFootingSection(doc, report, drawChrome) {
   drawSubsectionParagraph(
     doc,
     'Theory',
-    'For each tower location, the total impedance Zt is obtained by summing the measured impedance values of Foot-1, Foot-2, Foot-3, and Foot-4. The total current Itotal is obtained by summing all measured current values in mA and converting the total to amperes by dividing by 1000.',
+    'For each tower location, the total impedance Zt is obtained by summing the measured impedance values of Foot-1, Foot-2, Foot-3, and Foot-4. The total current is obtained by summing the 4 measured current values exactly as recorded in the footing rows.',
     drawChrome
   );
   drawSubsectionParagraph(
@@ -918,9 +915,9 @@ function renderTowerFootingSection(doc, report, drawChrome) {
       footToEarthingConnectionStatus: safeText(reading.footToEarthingConnectionStatus, 'Given'),
       measuredCurrentMa: safeText(reading.measuredCurrentMa, ''),
       measuredImpedance: safeText(reading.measuredImpedance, ''),
+      standardTolerableImpedanceZsat: '10',
       totalImpedanceZt: readingIndex === 0 ? (assessment.totalImpedanceZt === null ? '-' : String(assessment.totalImpedanceZt)) : '',
       totalCurrentItotal: readingIndex === 0 ? (assessment.totalCurrentItotal === null ? '-' : String(assessment.totalCurrentItotal)) : '',
-      standardTolerableImpedanceZsat: readingIndex === 0 ? String(assessment.zsat) : '',
       remarks: readingIndex === 0 ? assessment.comment : '',
       __observationBlocks: [buildObservationBlock(reading, safeText(reading.measurementPointLocation, 'Foot'))].filter(Boolean)
     }));
@@ -936,7 +933,7 @@ function renderTowerFootingSection(doc, report, drawChrome) {
       { key: 'measuredCurrentMa', label: 'Measured Current I (mA)', width: 0.09 },
       { key: 'measuredImpedance', label: 'Measured Impedance (ohm)', width: 0.09 },
       { key: 'totalImpedanceZt', label: 'Total Impedance Zt (ohm)', width: 0.1 },
-      { key: 'totalCurrentItotal', label: 'Total Current Itotal (A)', width: 0.09 },
+      { key: 'totalCurrentItotal', label: 'Total Current | Total (A)', width: 0.09 },
       { key: 'standardTolerableImpedanceZsat', label: 'Zsat', width: 0.08 },
       { key: 'remarks', label: 'Remarks', width: 0.14 }
     ],

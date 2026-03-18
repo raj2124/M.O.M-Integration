@@ -59,7 +59,7 @@ const TEST_STANDARD_REFERENCES = {
   prospectiveFaultCurrent: ['IEC 60909', 'IS/IEC fault level assessment'],
   riserIntegrityTest: ['IS 3043:2018', 'IEC 60364 earth continuity guidance'],
   earthContinuityTest: ['IS 3043:2018', 'IEC 60364 continuity verification'],
-  towerFootingResistance: ['Project default Zsat 10 ohm', 'Grouped tower footing analysis']
+  towerFootingResistance: ['Fixed Zsat 10 ohm', '4 fixed footing rows per tower location']
 };
 
 const SOIL_SPACING_PRESETS = ['0.5', '1.0', '1.5', '2.0', '2.5', '3.0', '3.5', '4.0', '4.5', '5.0'];
@@ -675,8 +675,7 @@ function summarizeTowerGroups(groups) {
       impedanceCount: impedanceValues.length,
       currentCount: currentValues.length,
       totalImpedanceZt: impedanceValues.length === TOWER_FOOT_POINTS.length ? round(impedanceValues.reduce((sum, value) => sum + value, 0), 2) : null,
-      totalCurrentItotal:
-        currentValues.length === TOWER_FOOT_POINTS.length ? round(currentValues.reduce((sum, value) => sum + value, 0) / 1000, 4) : null,
+      totalCurrentItotal: currentValues.length === TOWER_FOOT_POINTS.length ? round(currentValues.reduce((sum, value) => sum + value, 0), 2) : null,
       hasAnyInput
     });
   });
@@ -686,7 +685,7 @@ function summarizeTowerGroups(groups) {
 
 function deriveTowerFootingAssessment(group, groupSummary) {
   const standard = STANDARD_GUIDANCE.towerFootingResistance;
-  const zsat = toNumber(group?.standardTolerableImpedanceZsat) ?? 10;
+  const zsat = 10;
   const totalImpedanceZt = groupSummary?.totalImpedanceZt ?? null;
   const totalCurrentItotal = groupSummary?.totalCurrentItotal ?? null;
   let status = { label: 'Pending', tone: 'neutral' };
@@ -778,10 +777,184 @@ function countActionRows(source) {
   };
 }
 
+function summarizeStatusRows(rows, deriveFn) {
+  const statuses = (Array.isArray(rows) ? rows : [])
+    .map((row) => deriveFn(row).status)
+    .filter((status) => status && status.tone !== 'neutral');
+
+  const healthy = statuses.filter((status) => status.tone === 'healthy').length;
+  const warning = statuses.filter((status) => status.tone === 'warning').length;
+  const critical = statuses.filter((status) => status.tone === 'critical').length;
+
+  return {
+    tested: statuses.length,
+    healthy,
+    warning,
+    critical,
+    attention: warning + critical
+  };
+}
+
+function toneFromSummary(summary) {
+  if (summary.critical > 0) {
+    return 'critical';
+  }
+  if (summary.attention > 0) {
+    return 'warning';
+  }
+  if (summary.healthy > 0) {
+    return 'healthy';
+  }
+  return 'neutral';
+}
+
+function buildModuleInsights(source, soilSummary = calculateSoilSummary(source)) {
+  const selected = selectedTests(source);
+  const towerGroups = Array.isArray(source.towerFootingResistance) ? source.towerFootingResistance : [];
+  const towerSummaries = summarizeTowerGroups(towerGroups);
+
+  return selected.map((test) => {
+    if (test.id === 'soilResistivity') {
+      return {
+        id: test.id,
+        label: test.label,
+        shortLabel: test.shortLabel || test.label,
+        tone: soilSummary.category.tone,
+        badge: soilSummary.category.label,
+        detail:
+          soilSummary.overallAverage === null
+            ? 'Awaiting numeric readings in both soil directions.'
+            : `${soilSummary.overallAverage} ohm-m mean across both directions.`,
+        complete: soilSummary.overallAverage !== null
+      };
+    }
+
+    if (test.id === 'electrodeResistance') {
+      const summary = summarizeStatusRows(source.electrodeResistance, (row) => deriveElectrodeAssessment(row));
+      return {
+        id: test.id,
+        label: test.label,
+        shortLabel: test.shortLabel || test.label,
+        tone: toneFromSummary(summary),
+        badge: summary.critical ? `${summary.critical} critical` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
+        detail: summary.tested ? `${summary.healthy}/${summary.tested} within limit • ${summary.attention} need review.` : 'Awaiting with-grid resistance values.',
+        complete: summary.tested > 0
+      };
+    }
+
+    if (test.id === 'continuityTest') {
+      const summary = summarizeStatusRows(source.continuityTest, (row) => deriveContinuityAssessment(row));
+      return {
+        id: test.id,
+        label: test.label,
+        shortLabel: test.shortLabel || test.label,
+        tone: toneFromSummary(summary),
+        badge: summary.critical ? `${summary.critical} critical` : summary.attention ? `${summary.attention} review` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
+        detail: summary.tested ? `${summary.tested} points checked • ${summary.attention} above reference.` : 'Awaiting continuity resistance readings.',
+        complete: summary.tested > 0
+      };
+    }
+
+    if (test.id === 'loopImpedanceTest') {
+      const summary = summarizeStatusRows(source.loopImpedanceTest, (row) => deriveLoopAssessment(row));
+      return {
+        id: test.id,
+        label: test.label,
+        shortLabel: test.shortLabel || test.label,
+        tone: toneFromSummary(summary),
+        badge: summary.critical ? `${summary.critical} critical` : summary.attention ? `${summary.attention} review` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
+        detail: summary.tested ? `${summary.tested} Zs points assessed • ${summary.attention} elevated.` : 'Awaiting Zs entries for protective loop review.',
+        complete: summary.tested > 0
+      };
+    }
+
+    if (test.id === 'prospectiveFaultCurrent') {
+      const summary = summarizeStatusRows(source.prospectiveFaultCurrent, (row) => deriveFaultAssessment(row));
+      return {
+        id: test.id,
+        label: test.label,
+        shortLabel: test.shortLabel || test.label,
+        tone: toneFromSummary(summary),
+        badge: summary.critical ? `${summary.critical} critical` : summary.attention ? `${summary.attention} review` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
+        detail: summary.tested ? `${summary.tested} fault levels compared • ${summary.attention} near or above breaking capacity.` : 'Awaiting PFC and breaking-capacity entries.',
+        complete: summary.tested > 0
+      };
+    }
+
+    if (test.id === 'riserIntegrityTest') {
+      const summary = summarizeStatusRows(source.riserIntegrityTest, (row) => deriveRiserAssessment(row));
+      return {
+        id: test.id,
+        label: test.label,
+        shortLabel: test.shortLabel || test.label,
+        tone: toneFromSummary(summary),
+        badge: summary.critical ? `${summary.critical} critical` : summary.attention ? `${summary.attention} review` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
+        detail: summary.tested ? `${summary.tested} riser paths assessed • ${summary.attention} need follow-up.` : 'Awaiting riser resistance inputs.',
+        complete: summary.tested > 0
+      };
+    }
+
+    if (test.id === 'earthContinuityTest') {
+      const summary = summarizeStatusRows(source.earthContinuityTest, (row) => deriveEarthContinuityAssessment(row));
+      return {
+        id: test.id,
+        label: test.label,
+        shortLabel: test.shortLabel || test.label,
+        tone: toneFromSummary(summary),
+        badge: summary.critical ? `${summary.critical} critical` : summary.attention ? `${summary.attention} review` : summary.healthy ? `${summary.healthy} healthy` : 'Pending',
+        detail: summary.tested ? `${summary.tested} earth points checked • ${summary.attention} above threshold.` : 'Awaiting earth continuity values.',
+        complete: summary.tested > 0
+      };
+    }
+
+    if (test.id === 'towerFootingResistance') {
+      const assessments = towerGroups.map((group) => deriveTowerFootingAssessment(group, towerSummaries.get(buildTowerGroupKey(group))));
+      const completeGroups = assessments.filter((assessment) => Number.isFinite(assessment.totalImpedanceZt) && Number.isFinite(assessment.totalCurrentItotal)).length;
+      const healthy = assessments.filter((assessment) => assessment.status.tone === 'healthy').length;
+      const warning = assessments.filter((assessment) => assessment.status.tone === 'warning').length;
+      const critical = assessments.filter((assessment) => assessment.status.tone === 'critical').length;
+
+      return {
+        id: test.id,
+        label: test.label,
+        shortLabel: test.shortLabel || test.label,
+        tone: critical ? 'critical' : warning ? 'warning' : healthy ? 'healthy' : 'neutral',
+        badge: critical ? `${critical} critical` : warning ? `${warning} marginal` : healthy ? `${healthy} healthy` : 'Pending',
+        detail: towerGroups.length ? `${completeGroups}/${towerGroups.length} tower groups calculated.` : 'Awaiting tower location measurements.',
+        complete: completeGroups > 0,
+        groupCount: towerGroups.length,
+        completeGroups
+      };
+    }
+
+    return {
+      id: test.id,
+      label: test.label,
+      shortLabel: test.shortLabel || test.label,
+      tone: 'neutral',
+      badge: 'Pending',
+      detail: 'Awaiting measurement values.',
+      complete: false
+    };
+  });
+}
+
+function measurementCoverageFromModules(modules) {
+  const total = Array.isArray(modules) ? modules.length : 0;
+  const completed = (Array.isArray(modules) ? modules : []).filter((module) => module.complete).length;
+  return {
+    total,
+    completed,
+    score: total ? Math.round((completed / total) * 100) : 0
+  };
+}
+
 function buildAssessmentSummary(source) {
   const soil = calculateSoilSummary(source);
   const actions = countActionRows(source);
   const selected = selectedTests(source);
+  const modules = buildModuleInsights(source, soil);
+  const measurementCoverage = measurementCoverageFromModules(modules);
   const criticalSignals = actions.criticalTotal + (soil.category.tone === 'critical' ? 1 : 0);
   const warningSignals = actions.total - actions.criticalTotal + (soil.category.tone === 'warning' ? 1 : 0);
   const healthySignals = [
@@ -812,6 +985,8 @@ function buildAssessmentSummary(source) {
     soil,
     actions,
     selected,
+    modules,
+    measurementCoverage,
     healthySignals,
     tone,
     label
@@ -899,15 +1074,21 @@ function getProjectStageMeta(value) {
   return { label, tone: 'neutral' };
 }
 
-function builderReadiness() {
+function builderReadiness(assessment = buildAssessmentSummary(state.draft)) {
   const project = state.draft.project;
   const projectComplete = ['projectNo', 'clientName', 'siteLocation', 'workOrder', 'reportDate', 'engineerName'].filter((field) => safeText(project[field], '')).length;
-  const selectionComplete = selectedTestCount(state.draft) ? 1 : 0;
-  const score = Math.round(((projectComplete + selectionComplete) / 7) * 100);
+  const projectScore = Math.round((projectComplete / 6) * 100);
+  const selectionComplete = assessment.selected.length ? 1 : 0;
+  const selectionScore = selectionComplete ? 100 : 0;
+  const measurementScore = assessment.measurementCoverage.score;
+  const score = Math.round(projectScore * 0.45 + selectionScore * 0.1 + measurementScore * 0.45);
   return {
     score,
     projectComplete,
-    selectionComplete
+    selectionComplete,
+    projectScore,
+    selectionScore,
+    measurementScore
   };
 }
 
@@ -922,9 +1103,25 @@ function stepGuidance(stepId) {
     prospectiveFaultCurrent: 'Capture breaker and feeder context with the measured fault current values.',
     riserIntegrityTest: 'Use this for resistance checks towards equipment and towards the grid.',
     earthContinuityTest: 'Record tagged earth continuity points with distance and measured value.',
-    towerFootingResistance: 'Rows sharing the same tower location are assessed together using grouped total impedance and current.'
+    towerFootingResistance: 'Each tower location keeps 4 fixed footing rows with grouped totals and a fixed Zsat 10 standard.'
   };
   return map[stepId] || 'Continue entering the field measurements for the selected scope.';
+}
+
+function currentStepNote(stepId) {
+  const map = {
+    project: 'Keep the project references complete so saved reports and PDFs stay traceable.',
+    selection: 'Choose only the measurement sheets actually executed on site.',
+    soilResistivity: 'Complete both directions so the soil mean and category can calculate.',
+    electrodeResistance: 'Focus on the with-grid value because that drives the health result.',
+    continuityTest: 'Resistance is the main decision field; impedance is supporting context.',
+    loopImpedanceTest: 'Use measured Zs to flag circuits that need protection review.',
+    prospectiveFaultCurrent: 'Breaking capacity and PFC must both be filled for a real check.',
+    riserIntegrityTest: 'Capture both equipment-side and grid-side resistance for each point.',
+    earthContinuityTest: 'Use measured value to identify earth path continuity issues quickly.',
+    towerFootingResistance: 'Each tower location needs all 4 footing rows to complete grouped totals.'
+  };
+  return map[stepId] || '';
 }
 
 function renderSelectedModuleTags(source) {
@@ -967,6 +1164,97 @@ function renderProgressBar(label, value, tone = 'healthy') {
       </div>
       <div class="progress-track">
         <span class="progress-fill progress-fill-${tone}" style="width:${Math.max(0, Math.min(100, value))}%"></span>
+      </div>
+    </div>
+  `;
+}
+
+function renderAssessmentHighlights(assessment) {
+  const towerModule = assessment.modules.find((module) => module.id === 'towerFootingResistance');
+
+  const cards = [
+    {
+      label: 'Selected Scope',
+      value: assessment.selected.length ? `${assessment.selected.length}` : '-',
+      tone: assessment.selected.length ? 'brand' : 'neutral'
+    },
+    {
+      label: 'Healthy Modules',
+      value: assessment.selected.length ? `${assessment.healthySignals}/${assessment.selected.length}` : '-',
+      tone: assessment.healthySignals === assessment.selected.length && assessment.selected.length ? 'healthy' : assessment.healthySignals ? 'warning' : 'neutral'
+    },
+    {
+      label: 'Action Points',
+      value: String(assessment.actions.total),
+      tone: assessment.actions.total ? 'warning' : 'healthy'
+    },
+    {
+      label: 'Critical Findings',
+      value: String(assessment.actions.criticalTotal),
+      tone: assessment.actions.criticalTotal ? 'critical' : 'healthy'
+    },
+    {
+      label: 'Mean Soil',
+      value: assessment.soil.overallAverage === null ? '-' : `${assessment.soil.overallAverage} ohm-m`,
+      tone: assessment.soil.category.tone
+    },
+    {
+      label: 'Tower Groups',
+      value: towerModule ? `${towerModule.completeGroups || 0}/${towerModule.groupCount || 0}` : '-',
+      tone: towerModule ? towerModule.tone : 'neutral'
+    }
+  ];
+
+  return `
+    <div class="aside-stats aside-stats-rich">
+      ${cards
+        .map(
+          (card) => `
+            <div class="aside-stat-card aside-stat-card-${card.tone}">
+              <span>${escapeHtml(card.label)}</span>
+              <strong>${escapeHtml(card.value)}</strong>
+            </div>
+          `
+        )
+        .join('')}
+    </div>
+  `;
+}
+
+function renderModuleHealthList(assessment) {
+  if (!assessment.modules.length) {
+    return '<p class="muted">Select a measurement section to see module-specific health signals.</p>';
+  }
+
+  return `
+    <div class="module-health-list">
+      ${assessment.modules
+        .map(
+          (module) => `
+            <article class="module-health-item module-health-item-${module.tone}">
+              <div class="module-health-head">
+                <strong>${escapeHtml(module.shortLabel)}</strong>
+                ${pill(module.tone, module.badge)}
+              </div>
+              <p>${escapeHtml(module.detail)}</p>
+            </article>
+          `
+        )
+        .join('')}
+    </div>
+  `;
+}
+
+function renderScopeStandardsPanel(source) {
+  return `
+    <div class="builder-info-stack">
+      <div>
+        <h4>Selected Scope</h4>
+        ${renderSelectedModuleTags(source)}
+      </div>
+      <div>
+        <h4>Reference Standards</h4>
+        ${renderStandardsSummary(source)}
       </div>
     </div>
   `;
@@ -1839,18 +2127,16 @@ function towerGroupRowsHtml(group, groupIndex, summaries) {
       const sharedSummaryCells =
         readingIndex === 0
           ? `
-              <td class="tower-group-cell" rowspan="${readings.length}">${autoTextCell(assessment.totalImpedanceZt === null ? '-' : String(assessment.totalImpedanceZt))}</td>
-              <td class="tower-group-cell" rowspan="${readings.length}">${autoTextCell(assessment.totalCurrentItotal === null ? '-' : String(assessment.totalCurrentItotal))}</td>
-              <td class="tower-group-cell" rowspan="${readings.length}">
-                <input
-                  class="table-input"
-                  value="${escapeHtml(safeText(group.standardTolerableImpedanceZsat, '10'))}"
-                  data-section="towerFootingResistance"
-                  data-index="${groupIndex}"
-                  data-field="standardTolerableImpedanceZsat"
-                />
-              </td>
-              <td class="tower-group-cell" rowspan="${readings.length}">
+              <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">${autoTextCell(assessment.totalImpedanceZt === null ? '-' : String(assessment.totalImpedanceZt))}</td>
+              <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">${autoTextCell(assessment.totalCurrentItotal === null ? '-' : String(assessment.totalCurrentItotal))}</td>
+              <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">${autoTextCell('10')}</td>
+            `
+          : '';
+
+      const sharedRemarkCell =
+        readingIndex === 0
+          ? `
+              <td class="tower-group-cell tower-group-merged" rowspan="${readings.length}">
                 ${autoTextCell(assessment.comment)}
               </td>
             `
@@ -1876,6 +2162,7 @@ function towerGroupRowsHtml(group, groupIndex, summaries) {
           <td><input class="table-input" value="${escapeHtml(reading.measuredCurrentMa)}" data-section="towerFootingResistance" data-index="${groupIndex}" data-reading-index="${readingIndex}" data-field="measuredCurrentMa" /></td>
           <td><input class="table-input" value="${escapeHtml(reading.measuredImpedance)}" data-section="towerFootingResistance" data-index="${groupIndex}" data-reading-index="${readingIndex}" data-field="measuredImpedance" /></td>
           ${sharedSummaryCells}
+          ${sharedRemarkCell}
           ${towerReadingActionCell(groupIndex, readingIndex, reading)}
         </tr>
       `;
@@ -1891,7 +2178,7 @@ function renderTowerFootingStep() {
     tableSurface(
       'Tower Footing Resistance Measurement & Analysis',
       'Each tower location contains 4 fixed footing rows: Foot-1, Foot-2, Foot-3, and Foot-4.',
-      '<tr><th>Sr. No.</th><th>Main Location – Tower</th><th>Measurement Point Location</th><th>Foot to Earthing Connection Status</th><th>Measured Current I (mA)</th><th>Measured Impedance (ohm)</th><th>Total Impedance Zt (ohm)</th><th>Total Current Itotal (A)</th><th>Standard Tolerable Impedance value Zsat</th><th>Remarks</th><th>Action</th></tr>',
+      '<tr><th>Sr. No.</th><th>Main Location – Tower</th><th>Measurement Point Location</th><th>Foot to Earthing Connection Status</th><th>Measured Current I (mA)</th><th>Measured Impedance (ohm)</th><th>Total Impedance Zt (ohm)</th><th>Total Current | Total (A)</th><th>Standard Tolerable Impedance Value Zsat</th><th>Remarks</th><th>Action</th></tr>',
       state.draft.towerFootingResistance.map((group, groupIndex) => towerGroupRowsHtml(group, groupIndex, summaries)).join(''),
       '<div class="mini-surface-foot"><button class="button button-secondary" data-action="add-row" data-section="towerFootingResistance">Add New Tower Location</button></div>'
     )
@@ -2074,7 +2361,7 @@ function renderBuilderStep() {
 function builderView() {
   const steps = getSteps();
   const assessment = buildAssessmentSummary(state.draft);
-  const readiness = builderReadiness();
+  const readiness = builderReadiness(assessment);
   const currentStep = currentStepId();
   return `
     <section class="surface builder-shell">
@@ -2119,39 +2406,30 @@ function builderView() {
           <section class="mini-surface aside-panel">
             <p class="section-kicker">Live Readiness</p>
             <h4>${assessment.label}</h4>
-            <p>${stepGuidance(currentStep)}</p>
-            ${renderProgressBar('Project completeness', Math.round((readiness.projectComplete / 6) * 100), readiness.projectComplete === 6 ? 'healthy' : 'warning')}
-            ${renderProgressBar('Overall setup', readiness.score, readiness.score > 84 ? 'healthy' : readiness.score > 50 ? 'warning' : 'critical')}
-          </section>
-
-          <section class="mini-surface aside-panel">
-            <p class="section-kicker">Selected Modules</p>
-            <h4>${selectedTestCount(state.draft)} section(s)</h4>
-            ${renderSelectedModuleTags(state.draft)}
-          </section>
-
-          <section class="mini-surface aside-panel">
-            <p class="section-kicker">Reference Standards</p>
-            <h4>Typical standards</h4>
-            ${renderStandardsSummary(state.draft)}
+            <p>${stepGuidance(currentStep)} ${currentStepNote(currentStep)}</p>
+            ${renderProgressBar('Project completeness', readiness.projectScore, readiness.projectScore === 100 ? 'healthy' : readiness.projectScore > 60 ? 'warning' : 'critical')}
+            ${renderProgressBar('Measurement coverage', readiness.measurementScore, readiness.measurementScore > 84 ? 'healthy' : readiness.measurementScore > 40 ? 'warning' : 'critical')}
+            ${renderProgressBar('Overall readiness', readiness.score, readiness.score > 84 ? 'healthy' : readiness.score > 50 ? 'warning' : 'critical')}
           </section>
 
           <section class="mini-surface aside-panel">
             <p class="section-kicker">Live Assessment</p>
-            <div class="aside-stats">
-              <div><span>Mean Soil</span><strong>${assessment.soil.overallAverage === null ? '-' : `${assessment.soil.overallAverage} ohm-m`}</strong></div>
-              <div><span>Soil Category</span><strong>${assessment.soil.category.label}</strong></div>
-              <div><span>Critical Electrodes</span><strong>${assessment.actions.electrodeCritical}</strong></div>
-              <div><span>Action Points</span><strong>${assessment.actions.total}</strong></div>
-            </div>
-          </section>
-
-          <section class="mini-surface aside-panel">
-            <p class="section-kicker">Current Step</p>
-            <h4>${escapeHtml(steps[state.stepIndex].label)}</h4>
-            <p>Use the step pills above to move between completed sections and keep the report aligned with actual site work.</p>
+            ${renderAssessmentHighlights(assessment)}
+            <p class="aside-compact-note">Current step: <strong>${escapeHtml(steps[state.stepIndex].label)}</strong></p>
           </section>
         </aside>
+      </div>
+
+      <div class="builder-followup">
+        <section class="mini-surface aside-panel aside-panel-wide">
+          <p class="section-kicker">Scope & Standards</p>
+          ${renderScopeStandardsPanel(state.draft)}
+        </section>
+
+        <section class="mini-surface aside-panel aside-panel-wide">
+          <p class="section-kicker">Module Health</p>
+          ${renderModuleHealthList(assessment)}
+        </section>
       </div>
 
       <div class="wizard-nav">
@@ -2219,7 +2497,7 @@ function towerFootingDetailTable(groups) {
             <th>Measured Current I (mA)</th>
             <th>Measured Impedance (ohm)</th>
             <th>Total Impedance Zt (ohm)</th>
-            <th>Total Current Itotal (A)</th>
+            <th>Total Current | Total (A)</th>
             <th>Standard Tolerable Impedance Value Zsat</th>
             <th>Remarks</th>
             <th>Observation</th>
@@ -2252,8 +2530,12 @@ function towerFootingDetailTable(groups) {
                              <td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(
                                assessment.totalCurrentItotal === null ? '-' : String(assessment.totalCurrentItotal)
                              )}</td>
-                             <td class="tower-group-cell" rowspan="${readings.length}">${escapeHtml(String(assessment.zsat))}</td>
-                             <td class="tower-group-cell" rowspan="${readings.length}">${autoTextCell(assessment.comment)}</td>`
+                             <td class="tower-group-cell" rowspan="${readings.length}">10</td>`
+                          : ''
+                      }
+                      ${
+                        readingIndex === 0
+                          ? `<td class="tower-group-cell" rowspan="${readings.length}">${autoTextCell(assessment.comment)}</td>`
                           : ''
                       }
                       <td>${renderObservationCard(reading, safeText(reading.measurementPointLocation, 'Foot')) || '-'}</td>

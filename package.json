@@ -8,6 +8,7 @@
     "dev": "node src/server.js",
     "dev:watch": "node --watch --watch-path=src --watch-path=public src/server.js",
     "test:smoke": "node scripts/smoke-test.js",
+    "test:electroreports": "node scripts/electroreports-verify.js",
     "dev:electroreports": "cd electroreports && node src/server.js"
   },
   "dependencies": {
