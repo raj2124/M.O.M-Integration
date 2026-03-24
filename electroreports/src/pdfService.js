@@ -1730,7 +1730,33 @@ function buildComplianceSummaryRows(report) {
   return rows;
 }
 
-function buildOverallAssessmentText(summaryRows) {
+function getStoredAiNarrative(report) {
+  return report && typeof report.aiNarrative === 'object' && report.aiNarrative ? report.aiNarrative : null;
+}
+
+function getAiModuleSummary(report, testId) {
+  const narrative = getStoredAiNarrative(report);
+  if (!Array.isArray(narrative?.moduleSummaries)) {
+    return '';
+  }
+  const match = narrative.moduleSummaries.find((entry) => String(entry?.testId) === String(testId));
+  return safeText(match?.summary, '');
+}
+
+function renderAiModuleSummary(doc, report, testId, drawChrome, heading = 'Assessment Summary') {
+  const summary = getAiModuleSummary(report, testId);
+  if (!summary) {
+    return;
+  }
+  drawSubsectionParagraph(doc, heading, summary, drawChrome);
+}
+
+function buildOverallAssessmentText(report, summaryRows) {
+  const narrative = getStoredAiNarrative(report);
+  if (safeText(narrative?.overallAssessment, '')) {
+    return safeText(narrative.overallAssessment, '');
+  }
+
   if (!summaryRows.length) {
     return 'No measurement sections were selected for this report.';
   }
@@ -1820,7 +1846,19 @@ function getExecutiveFindingConfig(row) {
   };
 }
 
-function buildExecutiveFindingRows(summaryRows) {
+function buildExecutiveFindingRows(report, summaryRows) {
+  const narrative = getStoredAiNarrative(report);
+  if (Array.isArray(narrative?.keyFindings) && narrative.keyFindings.length) {
+    return narrative.keyFindings.map((row, index) => ({
+      srNo: String(index + 1),
+      testArea: safeText(row.testArea, 'Selected Scope'),
+      keyFinding: safeText(row.keyFinding, '-'),
+      priority: safeText(row.priority, 'P4 — Normal'),
+      recommendedAction: safeText(row.recommendedAction, '-'),
+      status: safeText(row.status, 'Compliant')
+    }));
+  }
+
   const rows = [];
   let srNo = 1;
 
@@ -1960,11 +1998,16 @@ function renderSurveyOverviewSection(doc, report, drawChrome) {
 
 function renderExecutiveSummarySection(doc, report, drawChrome) {
   const summaryRows = buildComplianceSummaryRows(report);
-  const findings = buildExecutiveFindingRows(summaryRows);
+  const findings = buildExecutiveFindingRows(report, summaryRows);
+  const narrative = getStoredAiNarrative(report);
 
   drawSectionTitle(doc, 'Executive Summary of Earthing System Health Assessment', 'Overall assessment, compliance summary, and key recommended actions.', drawChrome);
 
-  drawSubsectionParagraph(doc, 'Overall Assessment', buildOverallAssessmentText(summaryRows), drawChrome);
+  drawSubsectionParagraph(doc, 'Overall Assessment', buildOverallAssessmentText(report, summaryRows), drawChrome);
+
+  if (safeText(narrative?.executiveSummary, '')) {
+    drawParagraph(doc, safeText(narrative.executiveSummary, ''), drawChrome);
+  }
 
   drawBarChart(
     doc,
@@ -2427,6 +2470,8 @@ function renderSoilTheorySection(doc, report, drawChrome) {
     drawChrome
   );
 
+  renderAiModuleSummary(doc, report, 'soilResistivity', drawChrome);
+
   drawSubsectionParagraph(
     doc,
     'Theory',
@@ -2576,6 +2621,8 @@ function renderElectrodeSection(doc, report, drawChrome) {
     drawChrome
   );
 
+  renderAiModuleSummary(doc, report, 'electrodeResistance', drawChrome);
+
   drawSubsectionParagraph(
     doc,
     'Theory',
@@ -2622,6 +2669,7 @@ function renderElectrodeSection(doc, report, drawChrome) {
 
 function renderContinuitySection(doc, report, drawChrome) {
   drawSectionTitle(doc, 'Continuity Test', 'Point-to-point continuity readings.', drawChrome);
+  renderAiModuleSummary(doc, report, 'continuityTest', drawChrome);
   drawSubsectionParagraph(
     doc,
     'Methodology',
@@ -2655,6 +2703,7 @@ function renderContinuitySection(doc, report, drawChrome) {
 
 function renderLoopSection(doc, report, drawChrome) {
   drawSectionTitle(doc, 'Earth Loop Impedance Test - Measurement & Analysis', 'Measured Zs values across selected panels or equipment.', drawChrome);
+  renderAiModuleSummary(doc, report, 'loopImpedanceTest', drawChrome);
   drawSubsectionParagraph(
     doc,
     'Methodology',
@@ -2691,6 +2740,7 @@ function renderLoopSection(doc, report, drawChrome) {
 
 function renderFaultCurrentSection(doc, report, drawChrome) {
   drawSectionTitle(doc, 'Fault Current Test - Measurement & Analysis', 'Feeder details with loop impedance and fault current values.', drawChrome);
+  renderAiModuleSummary(doc, report, 'prospectiveFaultCurrent', drawChrome);
   drawSubsectionParagraph(
     doc,
     'Methodology',
@@ -2727,6 +2777,7 @@ function renderFaultCurrentSection(doc, report, drawChrome) {
 
 function renderRiserSection(doc, report, drawChrome) {
   drawSectionTitle(doc, 'Riser / Grid Integrity Test', 'Resistance verification towards equipment and grid.', drawChrome);
+  renderAiModuleSummary(doc, report, 'riserIntegrityTest', drawChrome);
   drawSubsectionParagraph(
     doc,
     'Methodology',
@@ -2763,6 +2814,7 @@ function renderRiserSection(doc, report, drawChrome) {
 
 function renderEarthContinuitySection(doc, report, drawChrome) {
   drawSectionTitle(doc, 'Earth Continuity Test', 'Earth path verification by location and measured value.', drawChrome);
+  renderAiModuleSummary(doc, report, 'earthContinuityTest', drawChrome);
   drawSubsectionParagraph(
     doc,
     'Methodology',
@@ -2804,6 +2856,8 @@ function renderTowerFootingSection(doc, report, drawChrome) {
     'Each tower location is evaluated using 4 fixed footing rows: Foot-1, Foot-2, Foot-3, and Foot-4.',
     drawChrome
   );
+
+  renderAiModuleSummary(doc, report, 'towerFootingResistance', drawChrome);
 
   drawSubsectionParagraph(
     doc,
@@ -2893,6 +2947,7 @@ function renderTowerFootingSection(doc, report, drawChrome) {
 }
 
 function renderConclusion(doc, report, drawChrome) {
+  const narrative = getStoredAiNarrative(report);
   const soil = calculateSoilSummary(report);
   const electrodeOverLimit = report.electrodeResistance.filter((row) => {
     return deriveElectrodeAssessment(row).status.tone === 'critical';
@@ -2919,6 +2974,11 @@ function renderConclusion(doc, report, drawChrome) {
   }).length;
 
   drawSectionTitle(doc, 'Conclusion', 'High-level outcome of the selected measurement sections.', drawChrome);
+
+  if (safeText(narrative?.closingSummary, '')) {
+    drawParagraph(doc, safeText(narrative.closingSummary, ''), drawChrome);
+    return;
+  }
 
   const parts = [];
   if (report.tests.soilResistivity) {

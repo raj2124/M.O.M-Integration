@@ -21,6 +21,10 @@ function toBool(value, defaultValue = false) {
 
 const host = process.env.ELECTROREPORTS_HOST || '127.0.0.1';
 const port = Number.parseInt(process.env.ELECTROREPORTS_PORT || '3011', 10);
+const referencePdfPaths = String(process.env.OPENAI_REFERENCE_PDFS || '')
+  .split(path.delimiter)
+  .map((entry) => entry.trim())
+  .filter(Boolean);
 
 module.exports = {
   app: {
@@ -33,6 +37,11 @@ module.exports = {
   },
   zoho: {
     useMock: toBool(process.env.ZOHO_USE_MOCK, true)
+  },
+  ai: {
+    apiKey: String(process.env.OPENAI_API_KEY || '').trim(),
+    model: String(process.env.OPENAI_MODEL || 'gpt-5.2').trim(),
+    referencePdfPaths
   },
   envPath
 };

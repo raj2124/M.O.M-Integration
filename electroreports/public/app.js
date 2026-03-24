@@ -283,6 +283,13 @@ const state = {
   view: 'dashboard',
   search: '',
   loadingReports: false,
+  ai: {
+    configured: false,
+    model: '',
+    referenceDocuments: [],
+    loadingStatus: false,
+    generating: false
+  },
   zoho: {
     projects: [],
     users: [],
@@ -1435,6 +1442,24 @@ async function loadCatalog() {
     }
   } catch (_error) {
     state.catalog = [...LOCAL_TEST_LIBRARY];
+  }
+}
+
+async function loadAiStatus() {
+  state.ai.loadingStatus = true;
+  render();
+  try {
+    const data = await api('/api/ai/status');
+    state.ai.configured = Boolean(data.configured);
+    state.ai.model = safeText(data.model, '');
+    state.ai.referenceDocuments = Array.isArray(data.referenceDocuments) ? data.referenceDocuments : [];
+  } catch (_error) {
+    state.ai.configured = false;
+    state.ai.model = '';
+    state.ai.referenceDocuments = [];
+  } finally {
+    state.ai.loadingStatus = false;
+    render();
   }
 }
 
@@ -2862,6 +2887,84 @@ function towerFootingDetailTable(groups) {
   `;
 }
 
+function renderAiNarrativeSection(report) {
+  const narrative = report?.aiNarrative;
+  if (!narrative) {
+    return reportSectionBlock(
+      'AI Report Assist',
+      `
+        <div class="detail-grid">
+          <div><span>AI Status</span><strong>${state.ai.configured ? 'Ready to generate' : 'Not configured'}</strong></div>
+          <div><span>Model</span><strong>${escapeHtml(state.ai.model || '-')}</strong></div>
+          <div><span>Reference PDFs</span><strong>${escapeHtml(state.ai.referenceDocuments.length ? state.ai.referenceDocuments.join(', ') : '-')}</strong></div>
+        </div>
+        <p class="detail-note">${
+          state.ai.configured
+            ? 'Generate a grounded executive summary, key findings, and module summaries from the saved report.'
+            : 'Add an OpenAI API key in the ElectroReports .env file to enable grounded report narrative generation.'
+        }</p>
+      `
+    );
+  }
+
+  const findings = Array.isArray(narrative.keyFindings) ? narrative.keyFindings : [];
+  const moduleSummaries = Array.isArray(narrative.moduleSummaries) ? narrative.moduleSummaries : [];
+
+  return reportSectionBlock(
+    'AI Report Assist',
+    `
+      <div class="detail-grid">
+        <div><span>Generated At</span><strong>${escapeHtml(safeText(narrative.generatedAt, '-'))}</strong></div>
+        <div><span>Model</span><strong>${escapeHtml(safeText(narrative.model, '-'))}</strong></div>
+        <div><span>Reference PDFs</span><strong>${escapeHtml((narrative.referenceDocuments || []).join(', ') || '-')}</strong></div>
+      </div>
+      <div class="detail-subsection">
+        <div class="detail-subsection-head"><h4>Overall Assessment</h4></div>
+        <p class="detail-note">${escapeHtml(safeText(narrative.overallAssessment, '-'))}</p>
+      </div>
+      <div class="detail-subsection">
+        <div class="detail-subsection-head"><h4>Executive Summary</h4></div>
+        <p class="detail-note">${escapeHtml(safeText(narrative.executiveSummary, '-'))}</p>
+      </div>
+      ${
+        findings.length
+          ? `
+            <div class="detail-subsection">
+              <div class="detail-subsection-head"><h4>Key Findings & Recommended Actions</h4></div>
+              ${simpleDetailTable(
+                [
+                  { label: 'Test Area', key: 'testArea' },
+                  { label: 'Key Finding', key: 'keyFinding' },
+                  { label: 'Priority', key: 'priority' },
+                  { label: 'Recommended Action', key: 'recommendedAction' },
+                  { label: 'Status', key: 'status' }
+                ],
+                findings
+              )}
+            </div>
+          `
+          : ''
+      }
+      ${
+        moduleSummaries.length
+          ? `
+            <div class="detail-subsection">
+              <div class="detail-subsection-head"><h4>Module Summaries</h4></div>
+              ${simpleDetailTable(
+                [
+                  { label: 'Measurement Sheet', key: 'label' },
+                  { label: 'Summary', key: 'summary' }
+                ],
+                moduleSummaries
+              )}
+            </div>
+          `
+          : ''
+      }
+    `
+  );
+}
+
 function detailView() {
   const report = state.activeReport;
   const assessment = buildAssessmentSummary(report);
@@ -2882,6 +2985,9 @@ function detailView() {
         <div class="button-row detail-hero-actions">
           <button class="button button-secondary" data-action="go-dashboard">Back to Dashboard</button>
           <button class="button button-primary" data-action="new-report">New Report</button>
+          <button class="button button-secondary" data-action="generate-ai-summary" data-id="${report.id}" ${!state.ai.configured || state.ai.generating ? 'disabled' : ''}>${
+            state.ai.generating ? 'Generating AI Summary...' : report.aiNarrative ? 'Refresh AI Summary' : 'Generate AI Summary'
+          }</button>
           <button class="button button-success" data-action="export-pdf" data-id="${report.id}" ${state.exporting ? 'disabled' : ''}>${state.exporting ? 'Generating PDF...' : 'Export PDF'}</button>
         </div>
         ${renderFloatingShapes(16, 'hero-shapes hero-shapes-subtle')}
@@ -2922,6 +3028,8 @@ function detailView() {
           </div>
         `
       )}
+
+      ${renderAiNarrativeSection(report)}
 
       ${report.tests.soilResistivity
         ? reportSectionBlock(
@@ -3646,6 +3754,22 @@ async function exportPdf(id) {
   }
 }
 
+async function generateAiNarrative(id) {
+  state.ai.generating = true;
+  render();
+  try {
+    const updated = await api(`/api/reports/${encodeURIComponent(id)}/ai/generate`, { method: 'POST' });
+    state.activeReport = updated;
+    state.reports = state.reports.map((report) => (report.id === updated.id ? updated : report));
+    showToast('AI summary generated successfully.', 'healthy');
+  } catch (error) {
+    showToast(error.message, 'critical');
+  } finally {
+    state.ai.generating = false;
+    render();
+  }
+}
+
 document.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-action]');
   if (!button) {
@@ -3820,6 +3944,11 @@ document.addEventListener('click', async (event) => {
     return;
   }
 
+  if (action === 'generate-ai-summary') {
+    await generateAiNarrative(button.dataset.id);
+    return;
+  }
+
   if (action === 'refresh-zoho-projects') {
     await loadZohoProjects();
     return;
@@ -3933,6 +4062,7 @@ document.addEventListener('keydown', (event) => {
 
 async function init() {
   render();
+  await loadAiStatus();
   await loadCatalog();
   await loadZohoProjects();
   await loadReports();

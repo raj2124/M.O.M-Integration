@@ -9,6 +9,7 @@
     "dev:watch": "node --watch --watch-path=src --watch-path=public src/server.js",
     "test:smoke": "node scripts/smoke-test.js",
     "test:electroreports": "node scripts/electroreports-verify.js",
+    "generate:electroreports:ai-reference": "node scripts/generate-electroreports-ai-reference.js",
     "dev:electroreports": "cd electroreports && node src/server.js"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "nodemailer": "^6.9.16",
+    "openai": "^6.32.0",
     "pdfkit": "^0.16.0"
   }
 }

@@ -80,6 +80,33 @@ function createReportStore({ filePath }) {
     return report;
   }
 
+  function updateReport(id, updater) {
+    const records = readAll();
+    const index = records.findIndex((report) => String(report.id) === String(id));
+    if (index === -1) {
+      return null;
+    }
+    const current = records[index];
+    const nextValue =
+      typeof updater === 'function'
+        ? updater(current)
+        : {
+            ...current,
+            ...(updater || {})
+          };
+    const updated = {
+      ...current,
+      ...(nextValue || {}),
+      id: current.id,
+      createdAt: current.createdAt,
+      updatedAt: new Date().toISOString()
+    };
+    const nextRecords = [...records];
+    nextRecords[index] = updated;
+    writeAll(sortByRecent(nextRecords));
+    return updated;
+  }
+
   function deleteReport(id) {
     const records = readAll();
     const target = records.find((report) => String(report.id) === String(id)) || null;
@@ -95,6 +122,7 @@ function createReportStore({ filePath }) {
     listReports,
     getReport,
     addReport,
+    updateReport,
     deleteReport
   };
 }

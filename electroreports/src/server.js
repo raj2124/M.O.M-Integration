@@ -6,6 +6,7 @@ const config = require('./config');
 const { createReportStore } = require('./reportStore');
 const { normalizeReportInput, TEST_LIBRARY } = require('./reportModel');
 const { generateElectroReportPdf } = require('./pdfService');
+const { getAiStatus, generateReportNarrative } = require('./aiService');
 const { getProjects, getProjectUsers, getPortalUsers } = require('../../src/zohoClient');
 
 const app = express();
@@ -43,6 +44,10 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/catalog', (_req, res) => {
   res.json({ tests: TEST_LIBRARY });
+});
+
+app.get('/api/ai/status', (_req, res) => {
+  res.json(getAiStatus());
 });
 
 app.get('/api/zoho/projects', async (req, res) => {
@@ -97,6 +102,27 @@ app.post('/api/reports', (req, res) => {
   } catch (error) {
     return res.status(400).json({
       message: error instanceof Error ? error.message : 'Invalid report payload.'
+    });
+  }
+});
+
+app.post('/api/reports/:id/ai/generate', async (req, res) => {
+  const report = store.getReport(req.params.id);
+  if (!report) {
+    return res.status(404).json({ message: 'Report not found.' });
+  }
+
+  try {
+    const narrative = await generateReportNarrative(report);
+    const updated = store.updateReport(req.params.id, (current) => ({
+      ...current,
+      aiNarrative: narrative
+    }));
+    return res.json(updated);
+  } catch (error) {
+    console.error('Failed to generate ElectroReports AI narrative', error);
+    return res.status(500).json({
+      message: error instanceof Error ? error.message : 'Failed to generate AI narrative.'
     });
   }
 });
