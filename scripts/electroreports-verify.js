@@ -46,23 +46,30 @@ function buildPayload() {
       towerFootingResistance: true
     },
     soilResistivity: {
-      direction1: [
-        { spacing: '0.5', resistivity: '60', rowObservation: 'Dry top layer observed.' },
-        { spacing: '1.0', resistivity: '70' },
-        { spacing: '1.5', resistivity: '80' },
-        { spacing: '2.0', resistivity: '90' },
-        { spacing: '2.5', resistivity: '100' },
-        { spacing: '3.0', resistivity: '110' }
-      ],
-      direction2: [
-        { spacing: '0.5', resistivity: '70' },
-        { spacing: '1.0', resistivity: '80' },
-        { spacing: '1.5', resistivity: '90' },
-        { spacing: '2.0', resistivity: '100' },
-        { spacing: '2.5', resistivity: '110' },
-        { spacing: '3.0', resistivity: '120' }
-      ],
-      notes: 'Verification dataset for soil averaging.'
+      locations: [
+        {
+          name: 'VAV Link 220kV Switch Yard',
+          direction1: [
+            { spacing: '0.5', resistivity: '60', rowObservation: 'Dry top layer observed.' },
+            { spacing: '1.0', resistivity: '70' },
+            { spacing: '1.5', resistivity: '80' },
+            { spacing: '2.0', resistivity: '90' },
+            { spacing: '2.5', resistivity: '100' },
+            { spacing: '3.0', resistivity: '110' }
+          ],
+          direction2: [
+            { spacing: '0.5', resistivity: '70' },
+            { spacing: '1.0', resistivity: '80' },
+            { spacing: '1.5', resistivity: '90' },
+            { spacing: '2.0', resistivity: '100' },
+            { spacing: '2.5', resistivity: '110' },
+            { spacing: '3.0', resistivity: '120' }
+          ],
+          drivenElectrodeDiameter: '40',
+          drivenElectrodeLength: '3',
+          notes: 'Verification dataset for soil averaging.'
+        }
+      ]
     },
     electrodeResistance: [
       {
@@ -93,46 +100,46 @@ function buildPayload() {
       { srNo: '3', mainLocation: 'Panel C', measurementPoint: 'Bond Lug', resistance: '1.4', impedance: '0.9' }
     ],
     loopImpedanceTest: [
-      { srNo: '1', mainLocation: 'DB-1', panelEquipment: 'Circuit 1', measuredZs: '0.8' },
-      { srNo: '2', mainLocation: 'DB-1', panelEquipment: 'Circuit 2', measuredZs: '1.3' },
-      { srNo: '3', mainLocation: 'DB-2', panelEquipment: 'Circuit 3', measuredZs: '1.8' }
+      { srNo: '1', location: 'STG-1 MCC', feederTag: 'O/G to Room AC unit', deviceType: 'MCCB', deviceRating: '125', breakingCapacity: '25', measuredPoints: 'R-E', loopImpedance: '0.8', voltage: '230' },
+      { srNo: '2', location: 'STG-1 MCC', feederTag: 'O/G to Room AC unit', deviceType: 'MCCB', deviceRating: '125', breakingCapacity: '25', measuredPoints: 'Y-E', loopImpedance: '1.3', voltage: '239' },
+      { srNo: '3', location: 'STG-1 MCC', feederTag: 'O/G to Room AC unit', deviceType: 'MCCB', deviceRating: '125', breakingCapacity: '25', measuredPoints: 'B-E', loopImpedance: '1.8', voltage: '237' }
     ],
     prospectiveFaultCurrent: [
       {
         srNo: '1',
-        location: 'MDB',
-        feederTag: 'F-1',
+        location: 'Phase-1 MCC Room',
+        feederTag: '2R4_O/G to PDB 23',
         deviceType: 'MCCB',
-        deviceRating: '400A',
+        deviceRating: '250',
         breakingCapacity: '20',
-        measuredPoints: 'L1-L2',
+        measuredPoints: 'R-E',
         loopImpedance: '0.2',
         prospectiveFaultCurrent: '12',
-        voltage: '415'
+        voltage: '238'
       },
       {
         srNo: '2',
-        location: 'SMDB',
-        feederTag: 'F-2',
+        location: 'Phase-1 MCC Room',
+        feederTag: '2R4_O/G to PDB 23',
         deviceType: 'MCCB',
-        deviceRating: '250A',
+        deviceRating: '250',
         breakingCapacity: '20',
-        measuredPoints: 'L2-L3',
+        measuredPoints: 'Y-E',
         loopImpedance: '0.3',
         prospectiveFaultCurrent: '19',
-        voltage: '415'
+        voltage: '238'
       },
       {
         srNo: '3',
-        location: 'PDB',
-        feederTag: 'F-3',
-        deviceType: 'MCB',
-        deviceRating: '63A',
+        location: 'Phase-1 MCC Room',
+        feederTag: '2R4_O/G to PDB 23',
+        deviceType: 'MCCB',
+        deviceRating: '250',
         breakingCapacity: '20',
-        measuredPoints: 'L1-N',
+        measuredPoints: 'B-E',
         loopImpedance: '0.4',
         prospectiveFaultCurrent: '24',
-        voltage: '240'
+        voltage: '238'
       }
     ],
     riserIntegrityTest: [
@@ -174,7 +181,8 @@ async function main() {
   const payload = buildPayload();
   const report = normalizeReportInput(payload);
 
-  assert(report.soilResistivity.direction1.length === 6, 'Soil direction 1 should normalize to 6 rows.');
+  assert(report.soilResistivity.locations.length === 1, 'Soil should normalize to one location.');
+  assert(report.soilResistivity.locations[0].direction1.length === 6, 'Soil direction 1 should normalize to 6 rows.');
   assert(report.electrodeResistance.length === 2, 'Electrode sheet should keep 2 rows.');
   assert(report.continuityTest.length === 3, 'Continuity sheet should keep 3 rows.');
   assert(report.loopImpedanceTest.length === 3, 'Loop impedance sheet should keep 3 rows.');
@@ -254,7 +262,13 @@ async function main() {
   );
 }
 
-main().catch((error) => {
-  console.error(`[electroreports] Verification FAIL: ${error.message}`);
-  process.exit(1);
-});
+module.exports = {
+  buildPayload
+};
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`[electroreports] Verification FAIL: ${error.message}`);
+    process.exit(1);
+  });
+}

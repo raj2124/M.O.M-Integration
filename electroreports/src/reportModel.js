@@ -51,6 +51,21 @@ const TEST_LIBRARY = [
 
 const SOIL_SPACING_PRESETS = ['0.5', '1.0', '1.5', '2.0', '2.5', '3.0', '3.5', '4.0', '4.5', '5.0'];
 const TOWER_FOOT_POINTS = ['Foot-1', 'Foot-2', 'Foot-3', 'Foot-4'];
+const PHASE_MEASURED_POINTS = ['R-E', 'Y-E', 'B-E'];
+const EQUIPMENT_LIBRARY = [
+  {
+    id: 'mi3152',
+    label: 'MI 3152 EurotestXC'
+  },
+  {
+    id: 'mi3290',
+    label: 'MI 3290 GF Earth Analyser'
+  },
+  {
+    id: 'kyoritsu4118a',
+    label: 'Kyoritsu Digital PSC Loop Tester 4118A'
+  }
+];
 
 function buildRowId(prefix = 'row') {
   const timestamp = Date.now().toString(36);
@@ -71,6 +86,18 @@ function createDefaultSoilRow(spacing = '', resistivity = '') {
     ...createRowMeta('soil'),
     spacing,
     resistivity
+  };
+}
+
+function createDefaultSoilLocation(name = 'Location 1') {
+  return {
+    locationId: buildRowId('soil-location'),
+    name,
+    direction1: SOIL_SPACING_PRESETS.slice(0, 6).map((spacing) => createDefaultSoilRow(spacing, '')),
+    direction2: SOIL_SPACING_PRESETS.slice(0, 6).map((spacing) => createDefaultSoilRow(spacing, '')),
+    drivenElectrodeDiameter: '',
+    drivenElectrodeLength: '',
+    notes: ''
   };
 }
 
@@ -105,9 +132,14 @@ function createDefaultLoopImpedanceRow() {
   return {
     ...createRowMeta('loop'),
     srNo: '',
-    mainLocation: '',
-    panelEquipment: '',
-    measuredZs: '',
+    location: '',
+    feederTag: '',
+    deviceType: 'MCB',
+    deviceRating: '',
+    breakingCapacity: '',
+    measuredPoints: 'R-E',
+    loopImpedance: '',
+    voltage: '230',
     remarks: ''
   };
 }
@@ -121,12 +153,28 @@ function createDefaultProspectiveFaultRow() {
     deviceType: 'MCB',
     deviceRating: '',
     breakingCapacity: '',
-    measuredPoints: '',
+    measuredPoints: 'R-E',
     loopImpedance: '',
     prospectiveFaultCurrent: '',
     voltage: '230',
     comment: ''
   };
+}
+
+function createDefaultLoopGroupRows(startIndex = 1) {
+  return PHASE_MEASURED_POINTS.map((point, index) => ({
+    ...createDefaultLoopImpedanceRow(),
+    srNo: String(startIndex + index),
+    measuredPoints: point
+  }));
+}
+
+function createDefaultFaultGroupRows(startIndex = 1) {
+  return PHASE_MEASURED_POINTS.map((point, index) => ({
+    ...createDefaultProspectiveFaultRow(),
+    srNo: String(startIndex + index),
+    measuredPoints: point
+  }));
 }
 
 function createDefaultRiserIntegrityRow() {
@@ -190,6 +238,7 @@ function buildDefaultDraft() {
       workOrder: '',
       reportDate: new Date().toISOString().slice(0, 10),
       engineerName: '',
+      equipmentSelections: EQUIPMENT_LIBRARY.map((equipment) => equipment.id),
       zohoProjectId: '',
       zohoProjectName: '',
       zohoProjectOwner: '',
@@ -206,14 +255,12 @@ function buildDefaultDraft() {
       towerFootingResistance: false
     },
     soilResistivity: {
-      direction1: SOIL_SPACING_PRESETS.slice(0, 6).map((spacing) => createDefaultSoilRow(spacing, '')),
-      direction2: SOIL_SPACING_PRESETS.slice(0, 6).map((spacing) => createDefaultSoilRow(spacing, '')),
-      notes: ''
+      locations: [createDefaultSoilLocation('Location 1')]
     },
     electrodeResistance: [createDefaultElectrodeRow()],
     continuityTest: [createDefaultContinuityRow()],
-    loopImpedanceTest: [createDefaultLoopImpedanceRow()],
-    prospectiveFaultCurrent: [createDefaultProspectiveFaultRow()],
+    loopImpedanceTest: createDefaultLoopGroupRows(1),
+    prospectiveFaultCurrent: createDefaultFaultGroupRows(1),
     riserIntegrityTest: [createDefaultRiserIntegrityRow()],
     earthContinuityTest: [createDefaultEarthContinuityRow()],
     towerFootingResistance: [{ ...createDefaultTowerFootingGroup(), srNo: '1' }]
@@ -249,6 +296,19 @@ function round(value, digits = 2) {
   }
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
+}
+
+function calculateDrivenElectrodeResistance(soilAverage, electrodeLengthMeters, electrodeDiameterMillimeters) {
+  const rho = Number.isFinite(soilAverage) ? soilAverage : null;
+  const lengthMeters = Number.isFinite(electrodeLengthMeters) ? electrodeLengthMeters : null;
+  const diameterMillimeters = Number.isFinite(electrodeDiameterMillimeters) ? electrodeDiameterMillimeters : null;
+  if (!Number.isFinite(rho) || !Number.isFinite(lengthMeters) || !Number.isFinite(diameterMillimeters) || lengthMeters <= 0 || diameterMillimeters <= 0) {
+    return null;
+  }
+
+  const diameterMeters = diameterMillimeters / 1000;
+  const result = (rho / (2 * Math.PI * lengthMeters)) * Math.log((2 * lengthMeters) / diameterMeters);
+  return round(result, 2);
 }
 
 function getSoilCategory(value) {
@@ -421,7 +481,7 @@ function deriveContinuityAssessment(row) {
 }
 
 function deriveLoopImpedanceAssessment(row) {
-  const measured = asLooseNumber(row?.measuredZs);
+  const measured = asLooseNumber(row?.loopImpedance) ?? asLooseNumber(row?.measuredZs);
   const status = getLoopImpedanceStatus(measured);
   const standard = STANDARD_GUIDANCE.loopImpedanceTest;
 
@@ -621,6 +681,36 @@ function normalizeSoilRows(rows) {
     }));
 }
 
+function soilLocationHasAnyValue(location) {
+  return (
+    Boolean(asTrimmedString(location?.name)) ||
+    Boolean(asTrimmedString(location?.drivenElectrodeDiameter)) ||
+    Boolean(asTrimmedString(location?.drivenElectrodeLength)) ||
+    Boolean(asTrimmedString(location?.notes)) ||
+    normalizeSoilRows(location?.direction1).length > 0 ||
+    normalizeSoilRows(location?.direction2).length > 0
+  );
+}
+
+function normalizeSoilLocations(input) {
+  const rawLocations =
+    Array.isArray(input?.locations) && input.locations.length
+      ? input.locations
+      : [input || {}];
+
+  return rawLocations
+    .filter((location) => soilLocationHasAnyValue(location))
+    .map((location, index) => ({
+      locationId: asTrimmedString(location?.locationId) || buildRowId('soil-location'),
+      name: asTrimmedString(location?.name) || `Location ${index + 1}`,
+      direction1: normalizeSoilRows(location?.direction1),
+      direction2: normalizeSoilRows(location?.direction2),
+      drivenElectrodeDiameter: asTrimmedString(location?.drivenElectrodeDiameter),
+      drivenElectrodeLength: asTrimmedString(location?.drivenElectrodeLength),
+      notes: asTrimmedString(location?.notes)
+    }));
+}
+
 function normalizeRows(rows, fieldMap, rowPrefix = 'row') {
   return (Array.isArray(rows) ? rows : [])
     .filter(rowHasAnyValue)
@@ -744,6 +834,57 @@ function normalizeTowerFootingGroups(inputGroups) {
   return Array.from(grouped.values());
 }
 
+function normalizeLoopRows(inputRows) {
+  return (Array.isArray(inputRows) ? inputRows : [])
+    .filter(rowHasAnyValue)
+    .map((row, index) => {
+      const normalized = normalizeRowMeta(row, 'loop');
+      normalized.srNo = asTrimmedString(row?.srNo) || String(index + 1);
+      normalized.location = asTrimmedString(row?.location || row?.mainLocation);
+      normalized.feederTag = asTrimmedString(row?.feederTag || row?.panelEquipment);
+      normalized.deviceType = asTrimmedString(row?.deviceType) || 'MCB';
+      normalized.deviceRating = asTrimmedString(row?.deviceRating);
+      normalized.breakingCapacity = asTrimmedString(row?.breakingCapacity);
+      normalized.measuredPoints = asTrimmedString(row?.measuredPoints) || PHASE_MEASURED_POINTS[index % PHASE_MEASURED_POINTS.length];
+      normalized.loopImpedance = asTrimmedString(row?.loopImpedance || row?.measuredZs);
+      normalized.voltage = asTrimmedString(row?.voltage) || '230';
+      normalized.remarks = asTrimmedString(row?.remarks);
+      return normalized;
+    })
+    .map((row, index) => ({
+      ...row,
+      srNo: String(index + 1),
+      measuredPoints: PHASE_MEASURED_POINTS[index % PHASE_MEASURED_POINTS.length],
+      remarks: asTrimmedString(row.remarks) || deriveLoopImpedanceAssessment(row).comment
+    }));
+}
+
+function normalizeFaultRows(inputRows) {
+  return (Array.isArray(inputRows) ? inputRows : [])
+    .filter(rowHasAnyValue)
+    .map((row, index) => {
+      const normalized = normalizeRowMeta(row, 'fault');
+      normalized.srNo = asTrimmedString(row?.srNo) || String(index + 1);
+      normalized.location = asTrimmedString(row?.location || row?.mainLocation);
+      normalized.feederTag = asTrimmedString(row?.feederTag || row?.panelEquipment);
+      normalized.deviceType = asTrimmedString(row?.deviceType) || 'MCB';
+      normalized.deviceRating = asTrimmedString(row?.deviceRating);
+      normalized.breakingCapacity = asTrimmedString(row?.breakingCapacity);
+      normalized.measuredPoints = asTrimmedString(row?.measuredPoints) || PHASE_MEASURED_POINTS[index % PHASE_MEASURED_POINTS.length];
+      normalized.loopImpedance = asTrimmedString(row?.loopImpedance || row?.measuredZs);
+      normalized.prospectiveFaultCurrent = asTrimmedString(row?.prospectiveFaultCurrent);
+      normalized.voltage = asTrimmedString(row?.voltage) || '230';
+      normalized.comment = asTrimmedString(row?.comment);
+      return normalized;
+    })
+    .map((row, index) => ({
+      ...row,
+      srNo: String(index + 1),
+      measuredPoints: PHASE_MEASURED_POINTS[index % PHASE_MEASURED_POINTS.length],
+      comment: asTrimmedString(row.comment) || deriveFaultCurrentAssessment(row).comment
+    }));
+}
+
 function normalizeReportInput(payload) {
   const draft = buildDefaultDraft();
   const input = payload || {};
@@ -755,11 +896,18 @@ function normalizeReportInput(payload) {
     workOrder: asTrimmedString(input?.project?.workOrder),
     reportDate: asTrimmedString(input?.project?.reportDate),
     engineerName: asTrimmedString(input?.project?.engineerName),
+    equipmentSelections: (Array.isArray(input?.project?.equipmentSelections) ? input.project.equipmentSelections : draft.project.equipmentSelections)
+      .map((value) => asTrimmedString(value))
+      .filter((value) => EQUIPMENT_LIBRARY.some((equipment) => equipment.id === value)),
     zohoProjectId: asTrimmedString(input?.project?.zohoProjectId),
     zohoProjectName: asTrimmedString(input?.project?.zohoProjectName),
     zohoProjectOwner: asTrimmedString(input?.project?.zohoProjectOwner),
     zohoProjectStage: asTrimmedString(input?.project?.zohoProjectStage)
   };
+
+  if (!project.equipmentSelections.length) {
+    project.equipmentSelections = [...draft.project.equipmentSelections];
+  }
 
   const tests = {};
   TEST_LIBRARY.forEach((test) => {
@@ -798,9 +946,7 @@ function normalizeReportInput(payload) {
     project,
     tests,
     soilResistivity: {
-      direction1: normalizeSoilRows(input?.soilResistivity?.direction1),
-      direction2: normalizeSoilRows(input?.soilResistivity?.direction2),
-      notes: asTrimmedString(input?.soilResistivity?.notes)
+      locations: normalizeSoilLocations(input?.soilResistivity)
     },
     electrodeResistance: normalizeRows(
       input?.electrodeResistance,
@@ -822,10 +968,7 @@ function normalizeReportInput(payload) {
       return {
         ...row,
         resistanceWithGrid,
-        observation: deriveElectrodeAssessment({
-          ...row,
-          resistanceWithGrid
-        }).comment
+        observation: asTrimmedString(source?.observation)
       };
     }),
     continuityTest: normalizeRows(
@@ -843,40 +986,8 @@ function normalizeReportInput(payload) {
       ...row,
       comment: deriveContinuityAssessment(row).comment
     })),
-    loopImpedanceTest: normalizeRows(
-      input?.loopImpedanceTest,
-      [
-      'srNo',
-      'mainLocation',
-      'panelEquipment',
-      'measuredZs',
-      'remarks'
-      ],
-      'loop'
-    ).map((row) => ({
-      ...row,
-      remarks: deriveLoopImpedanceAssessment(row).comment
-    })),
-    prospectiveFaultCurrent: normalizeRows(
-      input?.prospectiveFaultCurrent,
-      [
-      'srNo',
-      'location',
-      'feederTag',
-      'deviceType',
-      'deviceRating',
-      'breakingCapacity',
-      'measuredPoints',
-      'loopImpedance',
-      'prospectiveFaultCurrent',
-      'voltage',
-      'comment'
-      ],
-      'fault'
-    ).map((row) => ({
-      ...row,
-      comment: deriveFaultCurrentAssessment(row).comment
-    })),
+    loopImpedanceTest: normalizeLoopRows(input?.loopImpedanceTest),
+    prospectiveFaultCurrent: normalizeFaultRows(input?.prospectiveFaultCurrent),
     riserIntegrityTest: normalizeRows(
       input?.riserIntegrityTest,
       [
@@ -921,9 +1032,14 @@ function normalizeReportInput(payload) {
   };
 
   if (tests.soilResistivity) {
-    if (!report.soilResistivity.direction1.length || !report.soilResistivity.direction2.length) {
-      throw new Error('Soil resistivity requires readings in both Direction 1 and Direction 2.');
+    if (!report.soilResistivity.locations.length) {
+      throw new Error('Soil resistivity requires at least one named location.');
     }
+    report.soilResistivity.locations.forEach((location, index) => {
+      if (!location.direction1.length || !location.direction2.length) {
+        throw new Error(`Soil resistivity location ${index + 1} requires readings in both Direction 1 and Direction 2.`);
+      }
+    });
   }
 
   if (tests.towerFootingResistance) {
@@ -961,23 +1077,57 @@ function normalizeReportInput(payload) {
 }
 
 function calculateSoilSummary(report) {
-  const direction1Values = (report?.soilResistivity?.direction1 || [])
-    .map((row) => asLooseNumber(row.resistivity))
-    .filter((value) => Number.isFinite(value));
-  const direction2Values = (report?.soilResistivity?.direction2 || [])
-    .map((row) => asLooseNumber(row.resistivity))
-    .filter((value) => Number.isFinite(value));
+  const rawLocations =
+    Array.isArray(report?.soilResistivity?.locations) && report.soilResistivity.locations.length
+      ? report.soilResistivity.locations
+      : [
+          {
+            name: 'Location 1',
+            direction1: report?.soilResistivity?.direction1 || [],
+            direction2: report?.soilResistivity?.direction2 || [],
+            drivenElectrodeDiameter: report?.soilResistivity?.drivenElectrodeDiameter || '',
+            drivenElectrodeLength: report?.soilResistivity?.drivenElectrodeLength || '',
+            notes: report?.soilResistivity?.notes || ''
+          }
+        ];
 
-  const direction1Average = average(direction1Values);
-  const direction2Average = average(direction2Values);
-  const overallAverage = average([direction1Average, direction2Average].filter((value) => Number.isFinite(value)));
+  const locationSummaries = rawLocations.map((location, index) => {
+    const direction1Values = (location.direction1 || [])
+      .map((row) => asLooseNumber(row.resistivity))
+      .filter((value) => Number.isFinite(value));
+    const direction2Values = (location.direction2 || [])
+      .map((row) => asLooseNumber(row.resistivity))
+      .filter((value) => Number.isFinite(value));
+
+    const direction1Average = average(direction1Values);
+    const direction2Average = average(direction2Values);
+    const overallAverage = average([direction1Average, direction2Average].filter((value) => Number.isFinite(value)));
+    const category = getSoilCategory(overallAverage);
+
+    return {
+      locationId: asTrimmedString(location?.locationId) || `soil-location-${index + 1}`,
+      name: asTrimmedString(location?.name) || `Location ${index + 1}`,
+      direction1Average: round(direction1Average, 2),
+      direction2Average: round(direction2Average, 2),
+      overallAverage: round(overallAverage, 2),
+      category,
+      drivenElectrodeDiameter: asTrimmedString(location?.drivenElectrodeDiameter),
+      drivenElectrodeLength: asTrimmedString(location?.drivenElectrodeLength),
+      notes: asTrimmedString(location?.notes)
+    };
+  });
+
+  const direction1Average = average(locationSummaries.map((location) => location.direction1Average).filter((value) => Number.isFinite(value)));
+  const direction2Average = average(locationSummaries.map((location) => location.direction2Average).filter((value) => Number.isFinite(value)));
+  const overallAverage = average(locationSummaries.map((location) => location.overallAverage).filter((value) => Number.isFinite(value)));
   const category = getSoilCategory(overallAverage);
 
   return {
     direction1Average: round(direction1Average, 2),
     direction2Average: round(direction2Average, 2),
     overallAverage: round(overallAverage, 2),
-    category
+    category,
+    locations: locationSummaries
   };
 }
 
@@ -999,9 +1149,11 @@ function buildExecutiveSnapshot(report) {
 
 module.exports = {
   TEST_LIBRARY,
+  EQUIPMENT_LIBRARY,
   buildDefaultDraft,
   normalizeReportInput,
   calculateSoilSummary,
+  calculateDrivenElectrodeResistance,
   getSoilCategory,
   getElectrodeStatus,
   getContinuityStatus,
@@ -1020,6 +1172,7 @@ module.exports = {
   STANDARD_GUIDANCE,
   buildExecutiveSnapshot,
   createDefaultSoilRow,
+  createDefaultSoilLocation,
   createDefaultElectrodeRow,
   createDefaultContinuityRow,
   createDefaultLoopImpedanceRow,

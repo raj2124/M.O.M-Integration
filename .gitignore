@@ -16,6 +16,10 @@ generated-pdfs/
 data/
 tmp-electroreports-pdf-check/
 electroreports/.tmp-ql/
+!electroreports/data/
+electroreports/data/*
+!electroreports/data/reports.json/
+!electroreports/data/reports.json
 
 # OS
 .DS_Store

@@ -38,6 +38,7 @@ body {
   margin: 0;
   min-height: 100%;
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
   background:
     radial-gradient(circle at calc(var(--pointer-x) * 100%) calc(var(--pointer-y) * 100%), rgba(132, 196, 255, 0.28), transparent 24%),
     radial-gradient(circle at 14% calc(12% + var(--scroll-progress) * 18%), rgba(255, 255, 255, 0.92), transparent 32%),
@@ -49,6 +50,13 @@ body {
 
 body {
   position: relative;
+}
+
+button,
+input,
+select,
+textarea {
+  touch-action: manipulation;
 }
 
 .page-glow {
@@ -1561,6 +1569,7 @@ body {
   display: grid;
   gap: 16px;
   align-self: start;
+  min-width: 0;
 }
 
 .aside-panel {
@@ -1849,6 +1858,34 @@ body {
   gap: 14px;
 }
 
+.selection-support-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.glass-note-card {
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(191, 208, 228, 0.85);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(243, 248, 253, 0.82)),
+    radial-gradient(circle at 100% 0%, rgba(67, 155, 255, 0.08), transparent 30%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 16px 36px rgba(19, 45, 81, 0.06);
+}
+
+.glass-note-card h4 {
+  margin: 2px 0 8px;
+  font-size: 1.05rem;
+}
+
+.glass-note-card p:last-child {
+  margin-bottom: 0;
+}
+
 .zoho-sync-panel {
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
@@ -2132,9 +2169,39 @@ body {
   margin-top: 14px;
 }
 
+.stack-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.mini-surface-location {
+  display: grid;
+  gap: 16px;
+}
+
+.mini-surface-head-location {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.mini-surface-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .table-wrap {
   width: 100%;
+  position: relative;
   overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  padding-bottom: 8px;
 }
 
 .data-table {
@@ -2162,6 +2229,23 @@ body {
   min-width: 120px;
   padding: 10px 12px;
   background: rgba(248, 251, 255, 0.92);
+}
+
+.table-input-static {
+  min-width: 96px;
+  padding: 14px 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(181, 198, 216, 0.45);
+  background: rgba(244, 248, 253, 0.9);
+  text-align: center;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--brand-deep);
+}
+
+.phase-group-cell {
+  vertical-align: middle;
+  background: rgba(248, 251, 255, 0.72);
 }
 
 .standard-cell,
@@ -2337,6 +2421,26 @@ body {
 .detail-note {
   margin-top: 18px;
   line-height: 1.6;
+}
+
+.detail-subsection {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(189, 208, 230, 0.55);
+}
+
+.detail-subsection-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.detail-subsection-head h4 {
+  margin: 0;
+  font-size: 1.05rem;
 }
 
 .detail-table-observation td {
@@ -2635,10 +2739,14 @@ body {
   .split-grid,
   .field-grid,
   .detail-grid,
-  .builder-layout,
   .builder-followup,
   .module-health-list {
     grid-template-columns: 1fr;
+  }
+
+  .builder-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 
   .brand-shell,
@@ -2680,6 +2788,7 @@ body {
   .toolbar-actions {
     width: 100%;
     flex-wrap: wrap;
+    min-width: 0;
   }
 
   .button-row .button,
@@ -2689,11 +2798,15 @@ body {
 
   .builder-aside {
     position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
   }
 
   .brand-support {
     align-items: flex-start;
     text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .observation-drawer {
@@ -2703,6 +2816,33 @@ body {
   .zoho-sync-panel,
   .zoho-selected-bar {
     grid-template-columns: 1fr;
+  }
+
+  .stepper {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 -4px 20px;
+    padding: 0 4px 8px;
+    scroll-snap-type: x proximity;
+  }
+
+  .step-pill {
+    flex: 0 0 auto;
+    min-width: 124px;
+    scroll-snap-align: start;
+  }
+
+  .table-wrap {
+    margin-inline: -4px;
+    padding-inline: 4px;
+  }
+
+  .data-table {
+    min-width: 680px;
+  }
+
+  .tower-group-main {
+    min-width: 190px;
   }
 }
 
@@ -2719,12 +2859,35 @@ body {
     border-radius: 24px;
   }
 
+  .page-glow {
+    display: none;
+  }
+
   .hero-banner {
     padding: 24px 22px;
+    gap: 18px;
   }
 
   .hero-copy h2 {
     max-width: none;
+    font-size: clamp(2rem, 10vw, 2.8rem);
+    line-height: 1;
+  }
+
+  .hero-copy p {
+    max-width: none;
+    font-size: 0.98rem;
+    line-height: 1.58;
+  }
+
+  .hero-inline-notes {
+    gap: 8px;
+  }
+
+  .hero-inline-notes span,
+  .soft-chip {
+    width: 100%;
+    justify-content: center;
   }
 
   .hero-actions .button,
@@ -2737,6 +2900,15 @@ body {
   .zoho-card {
     min-height: unset;
     padding: 20px;
+  }
+
+  .report-card-meta,
+  .report-card-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar-actions {
+    min-width: 0;
   }
 
   .table-action-buttons {
@@ -2761,6 +2933,7 @@ body {
     position: relative;
     width: 100%;
     height: min(86vh, 760px);
+    padding: 20px 18px calc(24px + env(safe-area-inset-bottom, 0px));
     border-left: none;
     border-top: 1px solid rgba(177, 197, 219, 0.82);
     border-top-left-radius: 24px;
@@ -2778,6 +2951,194 @@ body {
   }
 
   .step-pill {
+    min-width: 108px;
+    padding: 10px 12px;
+    border-radius: 16px;
+  }
+
+  .step-pill strong {
+    font-size: 0.88rem;
+  }
+
+  .builder-header,
+  .detail-hero,
+  .toolbar,
+  .section-card,
+  .detail-block {
+    padding: 20px 18px;
+  }
+
+  .button-row,
+  .detail-hero-actions,
+  .mini-surface-head-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
     width: 100%;
   }
+
+  .mini-surface-head-location {
+    display: grid;
+    gap: 12px;
+  }
+
+  .wizard-nav {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .wizard-nav .button,
+  .button-row .button,
+  .detail-hero-actions .button,
+  .mini-surface-head-actions .button {
+    width: 100%;
+  }
+
+  .builder-aside,
+  .builder-followup,
+  .selection-grid,
+  .selection-support-grid,
+  .zoho-grid,
+  .card-grid,
+  .aside-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .stepper {
+    margin-bottom: 18px;
+  }
+
+  .search-input,
+  .text-input,
+  .table-input,
+  .text-area {
+    min-height: 52px;
+    font-size: 16px;
+  }
+
+  .table-wrap {
+    margin-inline: -2px;
+    padding: 0 2px 10px;
+    border-radius: 18px;
+    border: 1px solid rgba(189, 208, 230, 0.48);
+    background: linear-gradient(180deg, rgba(250, 253, 255, 0.76), rgba(241, 247, 252, 0.76));
+  }
+
+  .data-table {
+    min-width: 620px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 10px 8px;
+  }
+
+  .data-table th {
+    font-size: 0.72rem;
+    letter-spacing: 0.09em;
+  }
+
+  .table-input {
+    min-width: 96px;
+    padding: 10px 10px;
+  }
+
+  .table-input-static {
+    min-width: 82px;
+    padding: 12px 8px;
+    font-size: 0.82rem;
+  }
+
+  .standard-cell,
+  .auto-eval-text {
+    min-width: 150px;
+  }
+
+  .tower-group-main {
+    min-width: 160px;
+  }
+
+  .tower-group-merged .auto-eval-text {
+    padding: 12px;
+  }
+
+  .glass-note-card,
+  .zoho-sync-panel,
+  .zoho-selected-bar,
+  .zoho-user-strip,
+  .mini-surface {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-shell,
+  .brand-bar {
+    width: min(100% - 14px, 1220px);
+  }
+
+  .hero-panel,
+  .surface,
+  .brand-shell {
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .brand-shell {
+    gap: 12px;
+  }
+
+  .brand-logo {
+    width: min(220px, 100%);
+    max-width: 100%;
+  }
+
+  .brand-support {
+    font-size: 0.82rem;
+  }
+
+  .brand-support strong {
+    font-size: 0.95rem;
+  }
+
+  .hero-banner,
+  .builder-header,
+  .detail-hero,
+  .toolbar,
+  .section-card,
+  .detail-block {
+    padding: 18px 16px;
+  }
+
+  .hero-copy h2 {
+    font-size: clamp(1.9rem, 10.8vw, 2.5rem);
+  }
+
+  .selection-tile,
+  .report-card,
+  .zoho-card {
+    padding: 16px;
+  }
+
+  .step-pill {
+    min-width: 98px;
+  }
+
+  .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .data-table {
+    min-width: 560px;
+  }
+
+  .table-input {
+    min-width: 88px;
+  }
+
+  .table-input-static {
+    min-width: 76px;
+  }
+}
 }
