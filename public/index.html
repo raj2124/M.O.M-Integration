@@ -613,6 +613,26 @@
       </form>
     </dialog>
 
+    <dialog id="mobilePdfAssistModal">
+      <form method="dialog" class="modal-body" id="mobilePdfAssistForm" autocomplete="off">
+        <h3>Mobile PDF Actions</h3>
+        <p id="mobilePdfAssistMeta" class="zoho-sync-note">
+          Tap Share / Print PDF to open your phone's native share sheet. From there, choose Print, Save to Files, or
+          send the PDF to another app.
+        </p>
+        <label>
+          PDF Link
+          <textarea id="mobilePdfAssistUrl" rows="4" readonly></textarea>
+        </label>
+        <menu>
+          <button id="mobilePdfAssistShareBtn" class="btn btn-primary" type="button">Share / Print PDF</button>
+          <button id="mobilePdfAssistOpenBtn" class="btn btn-light" type="button">Open PDF</button>
+          <button id="mobilePdfAssistCopyBtn" class="btn btn-light" type="button">Copy Link</button>
+          <button id="mobilePdfAssistCloseBtn" class="btn btn-light" type="button">Close</button>
+        </menu>
+      </form>
+    </dialog>
+
     <div id="toast" class="toast"></div>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="/app.js"></script>

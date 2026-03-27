@@ -31,6 +31,13 @@ const mobileMailAssistCopyBtn = document.getElementById('mobileMailAssistCopyBtn
 const mobileMailAssistOpenBtn = document.getElementById('mobileMailAssistOpenBtn');
 const mobileMailAssistBrowserBtn = document.getElementById('mobileMailAssistBrowserBtn');
 const mobileMailAssistCloseBtn = document.getElementById('mobileMailAssistCloseBtn');
+const mobilePdfAssistModal = document.getElementById('mobilePdfAssistModal');
+const mobilePdfAssistMeta = document.getElementById('mobilePdfAssistMeta');
+const mobilePdfAssistUrl = document.getElementById('mobilePdfAssistUrl');
+const mobilePdfAssistShareBtn = document.getElementById('mobilePdfAssistShareBtn');
+const mobilePdfAssistOpenBtn = document.getElementById('mobilePdfAssistOpenBtn');
+const mobilePdfAssistCopyBtn = document.getElementById('mobilePdfAssistCopyBtn');
+const mobilePdfAssistCloseBtn = document.getElementById('mobilePdfAssistCloseBtn');
 
 const dashboardSearchInput = document.getElementById('dashboardSearchInput');
 const dashboardRecentProjects = document.getElementById('dashboardRecentProjects');
@@ -118,6 +125,7 @@ let pendingMobileComposeUrl = '';
 let pendingMobileMailtoUrl = '';
 let pendingMobileBodyText = '';
 let pendingMobilePdfUrl = '';
+let pendingMobilePdfAction = 'open';
 
 function showToast(message, type = 'success') {
   toast.textContent = message;
@@ -1471,6 +1479,22 @@ function openMobileBrowserComposeTarget(targetUrl = '') {
   return true;
 }
 
+function openMobilePdfTarget(targetUrl = '', { sameTab = false } = {}) {
+  const url = String(targetUrl || '').trim();
+  if (!url) {
+    return false;
+  }
+  if (sameTab || isMobileDevice()) {
+    window.location.href = url;
+    return true;
+  }
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    window.location.href = url;
+  }
+  return true;
+}
+
 function buildAndroidOutlookIntentUrl(appUrl = '', browserFallbackUrl = '') {
   const appTarget = String(appUrl || '').trim();
   if (!appTarget.toLowerCase().startsWith('ms-outlook://')) {
@@ -1703,6 +1727,71 @@ function openMobileMailAssist(emailDraft = {}) {
     appUrl: pendingMobileAppComposeUrl,
     browserUrl: pendingMobileComposeUrl || pendingMobileMailtoUrl
   });
+}
+
+function openMobilePdfAssist(pdfUrl = '', { action = 'print' } = {}) {
+  const fullUrl = String(pdfUrl || '').trim();
+  pendingMobilePdfUrl = fullUrl;
+  pendingMobilePdfAction = action;
+
+  if (mobilePdfAssistMeta) {
+    mobilePdfAssistMeta.textContent =
+      action === 'print'
+        ? "Tap Share / Print PDF to open your phone's native share sheet. From there, choose Print, Save to Files, or another app."
+        : "Tap Open PDF or Copy Link if you want to open or share the generated document on your phone.";
+  }
+
+  if (mobilePdfAssistUrl) {
+    mobilePdfAssistUrl.value = fullUrl;
+  }
+
+  if (mobilePdfAssistModal && typeof mobilePdfAssistModal.showModal === 'function') {
+    mobilePdfAssistModal.showModal();
+    return true;
+  }
+
+  return openMobilePdfTarget(fullUrl, { sameTab: true });
+}
+
+async function sharePdfFromUrl(pdfUrl = '') {
+  const fullUrl = String(pdfUrl || '').trim();
+  if (!fullUrl) {
+    return false;
+  }
+
+  if (navigator.share) {
+    try {
+      if (typeof File !== 'undefined') {
+        const response = await fetch(fullUrl, { credentials: 'same-origin' });
+        if (response.ok) {
+          const blob = await response.blob();
+          const filename = fullUrl.split('/').pop() || 'MOM.pdf';
+          const file = new File([blob], filename, { type: blob.type || 'application/pdf' });
+          if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: 'M.O.M PDF',
+              text: 'Open, print, or share the generated M.O.M PDF.',
+              files: [file]
+            });
+            return true;
+          }
+        }
+      }
+
+      await navigator.share({
+        title: 'M.O.M PDF',
+        text: 'Open, print, or share the generated M.O.M PDF.',
+        url: fullUrl
+      });
+      return true;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 function handleEmailDraftNote(note = '') {
@@ -2100,8 +2189,10 @@ function printPdfFromUrl(url, existingWindow = null) {
   }
 
   if (isMobileDevice()) {
-    printWindow.location.href = fullUrl;
-    showToast('PDF opened. Use your browser or PDF viewer print/share options on phone.');
+    if (printWindow && !printWindow.closed) {
+      printWindow.close();
+    }
+    openMobilePdfAssist(fullUrl, { action: 'print' });
     return true;
   }
 
@@ -2128,6 +2219,9 @@ function closeAllDialogs() {
   }
   if (mobileMailAssistModal?.open) {
     mobileMailAssistModal.close();
+  }
+  if (mobilePdfAssistModal?.open) {
+    mobilePdfAssistModal.close();
   }
 }
 
@@ -2359,6 +2453,81 @@ if (mobileMailAssistCloseBtn) {
   });
 }
 
+if (mobilePdfAssistCopyBtn) {
+  mobilePdfAssistCopyBtn.addEventListener('click', async () => {
+    const text = String(pendingMobilePdfUrl || '').trim();
+    if (!text) {
+      showToast('No PDF link available to copy.', 'error');
+      return;
+    }
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+      showToast('PDF link copied.');
+    } catch (_error) {
+      const temp = document.createElement('textarea');
+      temp.value = text;
+      document.body.appendChild(temp);
+      temp.select();
+      document.execCommand('copy');
+      document.body.removeChild(temp);
+      showToast('PDF link copied.');
+    }
+  });
+}
+
+if (mobilePdfAssistOpenBtn) {
+  mobilePdfAssistOpenBtn.addEventListener('click', () => {
+    const targetUrl = String(pendingMobilePdfUrl || '').trim();
+    if (!targetUrl) {
+      showToast('PDF is unavailable for this export.', 'error');
+      return;
+    }
+    if (mobilePdfAssistModal?.open) {
+      mobilePdfAssistModal.close();
+    }
+    openMobilePdfTarget(targetUrl, { sameTab: true });
+  });
+}
+
+if (mobilePdfAssistShareBtn) {
+  mobilePdfAssistShareBtn.addEventListener('click', async () => {
+    const targetUrl = String(pendingMobilePdfUrl || '').trim();
+    if (!targetUrl) {
+      showToast('PDF is unavailable for this export.', 'error');
+      return;
+    }
+
+    const shared = await sharePdfFromUrl(targetUrl);
+    if (shared) {
+      if (mobilePdfAssistModal?.open) {
+        mobilePdfAssistModal.close();
+      }
+      if (pendingMobilePdfAction === 'print') {
+        showToast('Use the share sheet to print, save, or send the PDF.');
+      }
+      return;
+    }
+
+    showToast('Share sheet unavailable. Opening the PDF directly instead.');
+    if (mobilePdfAssistModal?.open) {
+      mobilePdfAssistModal.close();
+    }
+    openMobilePdfTarget(targetUrl, { sameTab: true });
+  });
+}
+
+if (mobilePdfAssistCloseBtn) {
+  mobilePdfAssistCloseBtn.addEventListener('click', () => {
+    if (mobilePdfAssistModal?.open) {
+      mobilePdfAssistModal.close();
+    }
+  });
+}
+
 confirmRecordExportBtn.addEventListener('click', async () => {
   if (!activeRecordExport) {
     showToast('Please select a record first.', 'error');
@@ -2382,7 +2551,8 @@ confirmRecordExportBtn.addEventListener('click', async () => {
   }
 
   const needsPdfWindow = Boolean(options.printPdf || options.generatePdf);
-  const preopenedPdfWindow = needsPdfWindow ? window.open('about:blank', '_blank') : null;
+  const preopenedPdfWindow =
+    needsPdfWindow && !isMobileDevice() ? window.open('about:blank', '_blank') : null;
   const preopenedOutlookWindow =
     options.sendEmail && !isMobileDevice() ? window.open('about:blank', '_blank') : null;
 
@@ -2427,7 +2597,11 @@ confirmRecordExportBtn.addEventListener('click', async () => {
 
     let pdfOpened = false;
     if (options.generatePdf) {
-      if (preopenedPdfWindow) {
+      if (isMobileDevice()) {
+        if (!options.printPdf) {
+          openMobilePdfTarget(pdfAbsoluteUrl, { sameTab: true });
+        }
+      } else if (preopenedPdfWindow) {
         preopenedPdfWindow.location.href = pdfAbsoluteUrl;
       } else {
         window.open(pdfAbsoluteUrl, '_blank', 'noopener');
@@ -2477,7 +2651,8 @@ confirmSubmitBtn.addEventListener('click', async () => {
   confirmSubmitBtn.textContent = 'Submitting...';
 
   const needsPdfWindow = Boolean(options.printPdf || options.generatePdf);
-  const preopenedPdfWindow = needsPdfWindow ? window.open('about:blank', '_blank') : null;
+  const preopenedPdfWindow =
+    needsPdfWindow && !isMobileDevice() ? window.open('about:blank', '_blank') : null;
   const preopenedOutlookWindow =
     options.sendEmail && !isMobileDevice() ? window.open('about:blank', '_blank') : null;
 
@@ -2537,7 +2712,11 @@ confirmSubmitBtn.addEventListener('click', async () => {
 
     let pdfOpened = false;
     if (pdfAbsoluteUrl && options.generatePdf) {
-      if (preopenedPdfWindow) {
+      if (isMobileDevice()) {
+        if (!options.printPdf) {
+          openMobilePdfTarget(pdfAbsoluteUrl, { sameTab: true });
+        }
+      } else if (preopenedPdfWindow) {
         preopenedPdfWindow.location.href = pdfAbsoluteUrl;
       } else {
         window.open(pdfAbsoluteUrl, '_blank', 'noopener');
