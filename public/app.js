@@ -1405,7 +1405,7 @@ function buildOutlookAppComposeUrl({ to = '', cc = '', subject = '', body = '' }
     queryParts.push(`cc=${encodeOutlookQueryComponent(trimmedCc)}`);
   }
   queryParts.push(`subject=${encodeOutlookQueryComponent(subject)}`);
-  // Keep app URI minimal for mobile reliability; large body payloads can break app handoff.
+  queryParts.push(`body=${encodeOutlookQueryComponent(body)}`);
   return `ms-outlook://compose?${queryParts.join('&')}`;
 }
 
@@ -1422,7 +1422,7 @@ function isAndroidDevice() {
 function getOutlookComposeUrlCandidates(draft = {}) {
   const mobileUrl = String(draft.outlookComposeMobileUrl || '').trim();
   const desktopUrl = String(draft.outlookComposeUrl || '').trim();
-  const ordered = isMobileDevice() ? [desktopUrl, mobileUrl] : [desktopUrl, mobileUrl];
+  const ordered = isMobileDevice() ? [mobileUrl, desktopUrl] : [desktopUrl, mobileUrl];
   return ordered.filter((url, index, array) => Boolean(url) && array.indexOf(url) === index);
 }
 
