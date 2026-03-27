@@ -117,6 +117,7 @@ let pendingMobileAppComposeUrl = '';
 let pendingMobileComposeUrl = '';
 let pendingMobileMailtoUrl = '';
 let pendingMobileBodyText = '';
+let pendingMobilePdfUrl = '';
 
 function showToast(message, type = 'success') {
   toast.textContent = message;
@@ -1564,6 +1565,21 @@ function buildMailtoFallbackUrl(emailDraft = {}) {
   return `mailto:${encodeURIComponent(to)}${query}`;
 }
 
+function buildCompactMailtoBody(emailDraft = {}) {
+  const subject = String(emailDraft.subject || '').trim() || 'Minutes of Meeting';
+  const pdfAbsoluteUrl = String(emailDraft.pdfAbsoluteUrl || '').trim();
+  const lines = [
+    'Dear Sir / Madam,',
+    '',
+    'Please find the Minutes of Meeting (MoM).',
+    pdfAbsoluteUrl ? `PDF Link: ${pdfAbsoluteUrl}` : '',
+    '',
+    'Best regards,',
+    'ETPL_AI MoM System'
+  ].filter(Boolean);
+  return lines.join('\r\n');
+}
+
 function buildCompactMobileBody(emailDraft = {}) {
   const subject = String(emailDraft.subject || '').trim() || 'Minutes of Meeting';
   const pdfAbsoluteUrl = String(emailDraft.pdfAbsoluteUrl || '').trim();
@@ -1586,35 +1602,22 @@ function chooseMobileComposeTargets(emailDraft = {}) {
   const subject = String(emailDraft.subject || '').trim();
   const fullBody = String(emailDraft.body || '').trim();
   const compactBody = buildCompactMobileBody(emailDraft);
-  const compactBrowserComposeUrl = buildOutlookComposeUrlMobile({
-    to,
-    cc,
-    subject,
-    body: compactBody
-  });
-
-  const browserCandidates = getOutlookComposeUrlCandidates(emailDraft);
-  const browserComposeUrl = String(browserCandidates[0] || '').trim();
+  const compactMailBody = buildCompactMailtoBody(emailDraft);
   const appComposeUrl =
     String(emailDraft.outlookAppComposeUrl || '').trim() ||
     buildOutlookAppComposeUrl({ to, cc, subject, body: fullBody });
-  const composeFits = browserComposeUrl && browserComposeUrl.length <= MAX_MOBILE_URL_LENGTH;
-
-  if (composeFits) {
+  const fullMailtoUrl = buildMailtoFallbackUrl({
+    to,
+    cc,
+    subject,
+    body: fullBody
+  });
+  if (fullMailtoUrl && fullMailtoUrl.length <= MAX_MOBILE_URL_LENGTH) {
     return {
       appComposeUrl,
-      composeUrl: browserComposeUrl,
-      mailtoUrl: '',
-      reason: ''
-    };
-  }
-
-  if (compactBrowserComposeUrl && compactBrowserComposeUrl.length <= MAX_MOBILE_URL_LENGTH) {
-    return {
-      appComposeUrl: buildOutlookAppComposeUrl({ to, cc, subject, body: compactBody }),
-      composeUrl: compactBrowserComposeUrl,
-      mailtoUrl: '',
-      reason: 'Long draft content on mobile. Using compact Outlook compose body.'
+      composeUrl: '',
+      mailtoUrl: fullMailtoUrl,
+      reason: 'Opening mail app with full draft body.'
     };
   }
 
@@ -1622,7 +1625,7 @@ function chooseMobileComposeTargets(emailDraft = {}) {
     to,
     cc,
     subject,
-    body: compactBody
+    body: compactMailBody
   });
   const compactAppComposeUrl = buildOutlookAppComposeUrl({ to, cc, subject, body: compactBody });
 
@@ -1631,7 +1634,7 @@ function chooseMobileComposeTargets(emailDraft = {}) {
       appComposeUrl: compactAppComposeUrl,
       composeUrl: '',
       mailtoUrl: compactMailtoUrl,
-      reason: 'Long draft content on mobile. Using compact compose fallback.'
+      reason: 'Full draft is too long for mobile compose. Opening mail app with a compact draft; copy the full body below if needed.'
     };
   }
 
@@ -1652,7 +1655,7 @@ function chooseMobileComposeTargets(emailDraft = {}) {
     appComposeUrl: minimalAppComposeUrl,
     composeUrl: '',
     mailtoUrl: minimalMailtoUrl,
-    reason: 'Long draft content on mobile. Opening minimal compose; paste body manually.'
+    reason: 'Full draft is too long for mobile mail compose. Opening minimal compose; paste the full body below manually.'
   };
 }
 
@@ -1663,6 +1666,7 @@ function openMobileMailAssist(emailDraft = {}) {
   pendingMobileComposeUrl = composeUrl;
   pendingMobileMailtoUrl = mailtoUrl;
   pendingMobileBodyText = fullBody || buildCompactMobileBody(emailDraft);
+  pendingMobilePdfUrl = String(emailDraft.pdfAbsoluteUrl || '').trim();
 
   if (mobileMailAssistMeta) {
     const graphNote = String(emailDraft.attachmentNote || '').trim();
@@ -1672,7 +1676,7 @@ function openMobileMailAssist(emailDraft = {}) {
     ].filter(Boolean);
     mobileMailAssistMeta.textContent =
       noteParts.join(' ') ||
-      'Tap Open Outlook App to continue. If app compose does not open, use Open Browser Compose.';
+      'Tap Open Mail App to continue. If the draft body is incomplete, copy it from below.';
   }
 
   if (mobileMailAssistBody) {
@@ -1680,13 +1684,14 @@ function openMobileMailAssist(emailDraft = {}) {
   }
 
   if (mobileMailAssistOpenBtn) {
-    const appSupported = Boolean(pendingMobileAppComposeUrl) && !isIOSDevice();
-    mobileMailAssistOpenBtn.textContent = appSupported ? 'Open Outlook App' : 'Outlook App Unavailable';
+    const appSupported = Boolean(pendingMobileMailtoUrl || pendingMobileAppComposeUrl);
+    mobileMailAssistOpenBtn.textContent = appSupported ? 'Open Mail App' : 'Mail App Unavailable';
     mobileMailAssistOpenBtn.disabled = !appSupported;
   }
 
   if (mobileMailAssistBrowserBtn) {
-    mobileMailAssistBrowserBtn.disabled = !pendingMobileComposeUrl && !pendingMobileMailtoUrl;
+    mobileMailAssistBrowserBtn.textContent = 'Open Browser PDF';
+    mobileMailAssistBrowserBtn.disabled = !pendingMobilePdfUrl;
   }
 
   if (mobileMailAssistModal && typeof mobileMailAssistModal.showModal === 'function') {
@@ -2314,14 +2319,19 @@ if (mobileMailAssistCopyBtn) {
 
 if (mobileMailAssistOpenBtn) {
   mobileMailAssistOpenBtn.addEventListener('click', () => {
-    const appUrl = String(pendingMobileAppComposeUrl || '').trim();
-    const browserUrl = String(pendingMobileComposeUrl || pendingMobileMailtoUrl || '').trim();
+    const mailtoUrl = String(pendingMobileMailtoUrl || '').trim();
+    const appUrl = !isIOSDevice() ? String(pendingMobileAppComposeUrl || '').trim() : '';
+    const browserUrl = String(mailtoUrl || pendingMobileComposeUrl || '').trim();
     if (!appUrl && !browserUrl) {
-      showToast('Unable to open Outlook app. Please copy body and use browser compose.', 'error');
+      showToast('Unable to open mail app. Please copy the body manually.', 'error');
       return;
     }
     if (mobileMailAssistModal?.open) {
       mobileMailAssistModal.close();
+    }
+    if (mailtoUrl) {
+      window.location.href = mailtoUrl;
+      return;
     }
     launchMobileAppComposeWithFallback({ appUrl, browserUrl });
   });
@@ -2329,9 +2339,9 @@ if (mobileMailAssistOpenBtn) {
 
 if (mobileMailAssistBrowserBtn) {
   mobileMailAssistBrowserBtn.addEventListener('click', () => {
-    const targetUrl = String(pendingMobileComposeUrl || pendingMobileMailtoUrl || '').trim();
+    const targetUrl = String(pendingMobilePdfUrl || '').trim();
     if (!targetUrl) {
-      showToast('Browser compose is unavailable for this draft.', 'error');
+      showToast('PDF is unavailable for this draft.', 'error');
       return;
     }
     if (mobileMailAssistModal?.open) {

@@ -89,11 +89,42 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/generated-pdfs', express.static(config.app.generatedDir));
 app.use(express.static(path.join(config.app.rootDir, 'public')));
 
-function buildAbsolutePdfUrl(pdfUrl) {
+function normalizePublicBaseUrl(baseUrl) {
+  const value = String(baseUrl || '').trim();
+  if (!value) {
+    return value;
+  }
+
   try {
-    return new URL(pdfUrl, config.app.baseUrl).toString();
+    const url = new URL(value);
+    if (url.hostname === 'mom.elegrow.com') {
+      url.hostname = 'www.mom.elegrow.com';
+    }
+    return url.toString().replace(/\/+$/, '');
   } catch (_error) {
-    return `${String(config.app.baseUrl || '').replace(/\/+$/, '')}${pdfUrl}`;
+    return value.replace(/^https?:\/\/mom\.elegrow\.com/i, 'https://www.mom.elegrow.com').replace(/\/+$/, '');
+  }
+}
+
+function getRequestBaseUrl(req) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  const forwardedHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+  const host = forwardedHost || String(req.get('host') || '').trim();
+  const proto = forwardedProto || req.protocol || 'https';
+
+  if (host) {
+    return normalizePublicBaseUrl(`${proto}://${host}`);
+  }
+
+  return normalizePublicBaseUrl(config.app.baseUrl);
+}
+
+function buildAbsolutePdfUrl(pdfUrl, req = null) {
+  const baseUrl = req ? getRequestBaseUrl(req) : normalizePublicBaseUrl(config.app.baseUrl);
+  try {
+    return new URL(pdfUrl, baseUrl).toString();
+  } catch (_error) {
+    return `${String(baseUrl || '').replace(/\/+$/, '')}${pdfUrl}`;
   }
 }
 
@@ -177,14 +208,14 @@ function buildOutlookAppComposeUrl({ to = '', cc = '', subject = '', body = '' }
   return `ms-outlook://compose?${queryParts.join('&')}`;
 }
 
-function buildEmailDraftPayload({ mom, options, pdfUrl, pdfFileName = '' }) {
+function buildEmailDraftPayload({ mom, options, pdfUrl, pdfFileName = '', req = null }) {
   const to = String(options.emailTo || '').trim();
   const cc = String(options.emailCc || '').trim();
   const projectRef = getProjectRefForEmailSubject(mom);
   const subject =
     String(options.emailSubject || '').trim() ||
     `MOM - Project ${projectRef} - ${formatMeetingDateForSubject(mom.meetingDate)}`;
-  const pdfAbsoluteUrl = buildAbsolutePdfUrl(pdfUrl);
+  const pdfAbsoluteUrl = buildAbsolutePdfUrl(pdfUrl, req);
   const pdfFilePath = pdfFileName ? path.join(config.app.generatedDir, pdfFileName) : '';
 
   const meetingTitle = String(mom.meetingTitle || '-').trim() || '-';
@@ -255,12 +286,13 @@ function buildOutlookDraftFromPayload(payload, warning = '') {
   };
 }
 
-async function buildEmailDraft({ mom, options, pdfUrl, pdfFileName = '' }) {
+async function buildEmailDraft({ mom, options, pdfUrl, pdfFileName = '', req = null }) {
   const payload = buildEmailDraftPayload({
     mom,
     options,
     pdfUrl,
-    pdfFileName
+    pdfFileName,
+    req
   });
 
   if (!isGraphDraftConfigured(config)) {
@@ -531,7 +563,8 @@ app.post('/api/mom/records/:recordId/email-draft', async (req, res) => {
       mom: buildRecordMomShape(record),
       options,
       pdfUrl,
-      pdfFileName: String(record.pdfFileName || '').trim()
+      pdfFileName: String(record.pdfFileName || '').trim(),
+      req
     });
 
     return res.json({
@@ -579,7 +612,8 @@ app.post('/api/mom/submit', async (req, res) => {
         mom,
         options,
         pdfUrl,
-        pdfFileName: fileName
+        pdfFileName: fileName,
+        req
       });
     }
 
@@ -599,7 +633,7 @@ app.post('/api/mom/submit', async (req, res) => {
       },
       pdfUrl,
       pdfFileName: fileName,
-      pdfAbsoluteUrl: buildAbsolutePdfUrl(pdfUrl)
+      pdfAbsoluteUrl: buildAbsolutePdfUrl(pdfUrl, req)
     });
     purgeRemovedRecordPdfs(removed);
 
@@ -609,7 +643,7 @@ app.post('/api/mom/submit', async (req, res) => {
       result: {
         pdfUrl,
         pdfFileName: fileName,
-        pdfAbsoluteUrl: buildAbsolutePdfUrl(pdfUrl),
+        pdfAbsoluteUrl: buildAbsolutePdfUrl(pdfUrl, req),
         authenticity,
         emailSent: false,
         emailDraft,
