@@ -1418,6 +1418,13 @@ function isAndroidDevice() {
   return /Android/i.test(String(navigator.userAgent || ''));
 }
 
+function isIOSDevice() {
+  const ua = String(navigator.userAgent || '');
+  const platform = String(navigator.platform || '');
+  const touchPoints = Number(navigator.maxTouchPoints || 0);
+  return /iPhone|iPad|iPod/i.test(ua) || (platform === 'MacIntel' && touchPoints > 1);
+}
+
 function getOutlookComposeUrlCandidates(draft = {}) {
   const mobileUrl = String(draft.outlookComposeMobileUrl || '').trim();
   const desktopUrl = String(draft.outlookComposeUrl || '').trim();
@@ -1451,6 +1458,10 @@ function openMobileBrowserComposeTarget(targetUrl = '') {
   const url = String(targetUrl || '').trim();
   if (!url) {
     return false;
+  }
+  if (isMobileDevice()) {
+    window.location.href = url;
+    return true;
   }
   const opened = window.open(url, '_blank', 'noopener,noreferrer');
   if (!opened) {
@@ -1669,7 +1680,9 @@ function openMobileMailAssist(emailDraft = {}) {
   }
 
   if (mobileMailAssistOpenBtn) {
-    mobileMailAssistOpenBtn.textContent = pendingMobileAppComposeUrl ? 'Open Outlook App' : 'Open Mail App';
+    const appSupported = Boolean(pendingMobileAppComposeUrl) && !isIOSDevice();
+    mobileMailAssistOpenBtn.textContent = appSupported ? 'Open Outlook App' : 'Outlook App Unavailable';
+    mobileMailAssistOpenBtn.disabled = !appSupported;
   }
 
   if (mobileMailAssistBrowserBtn) {
@@ -1728,6 +1741,9 @@ function openEmailDraftFromResponse(emailDraft = {}, preopenedWindow = null) {
 }
 
 function openDraftForCurrentDevice(emailDraft = {}, preopenedOutlookWindow = null) {
+  if (isMobileDevice()) {
+    return openMobileMailAssist(emailDraft);
+  }
   return openEmailDraftFromResponse(emailDraft, preopenedOutlookWindow);
 }
 
@@ -2078,6 +2094,12 @@ function printPdfFromUrl(url, existingWindow = null) {
     return false;
   }
 
+  if (isMobileDevice()) {
+    printWindow.location.href = fullUrl;
+    showToast('PDF opened. Use your browser or PDF viewer print/share options on phone.');
+    return true;
+  }
+
   printWindow.location.href = fullUrl;
   printWindow.addEventListener('load', () => {
     printWindow.focus();
@@ -2349,10 +2371,10 @@ confirmRecordExportBtn.addEventListener('click', async () => {
     return;
   }
 
-  const needsPdfWindow = Boolean(options.printPdf || (options.generatePdf && !options.sendEmail));
+  const needsPdfWindow = Boolean(options.printPdf || options.generatePdf);
   const preopenedPdfWindow = needsPdfWindow ? window.open('about:blank', '_blank') : null;
   const preopenedOutlookWindow =
-    options.sendEmail ? window.open('about:blank', '_blank') : null;
+    options.sendEmail && !isMobileDevice() ? window.open('about:blank', '_blank') : null;
 
   try {
     if (options.sendEmail) {
@@ -2394,7 +2416,7 @@ confirmRecordExportBtn.addEventListener('click', async () => {
     }
 
     let pdfOpened = false;
-    if (options.generatePdf && !options.sendEmail) {
+    if (options.generatePdf) {
       if (preopenedPdfWindow) {
         preopenedPdfWindow.location.href = pdfAbsoluteUrl;
       } else {
@@ -2444,10 +2466,10 @@ confirmSubmitBtn.addEventListener('click', async () => {
   confirmSubmitBtn.disabled = true;
   confirmSubmitBtn.textContent = 'Submitting...';
 
-  const needsPdfWindow = Boolean(options.printPdf || (options.generatePdf && !options.sendEmail));
+  const needsPdfWindow = Boolean(options.printPdf || options.generatePdf);
   const preopenedPdfWindow = needsPdfWindow ? window.open('about:blank', '_blank') : null;
   const preopenedOutlookWindow =
-    options.sendEmail ? window.open('about:blank', '_blank') : null;
+    options.sendEmail && !isMobileDevice() ? window.open('about:blank', '_blank') : null;
 
   try {
     const response = await fetch('/api/mom/submit', {
@@ -2504,7 +2526,7 @@ confirmSubmitBtn.addEventListener('click', async () => {
     }
 
     let pdfOpened = false;
-    if (pdfAbsoluteUrl && options.generatePdf && !options.sendEmail) {
+    if (pdfAbsoluteUrl && options.generatePdf) {
       if (preopenedPdfWindow) {
         preopenedPdfWindow.location.href = pdfAbsoluteUrl;
       } else {
