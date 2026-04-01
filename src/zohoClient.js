@@ -737,6 +737,48 @@ function toZohoErrorMessage(error) {
   return error.message || 'Zoho API request failed';
 }
 
+function toZohoErrorObject(error) {
+  if (!axios.isAxiosError(error)) {
+    return {
+      status: 0,
+      code: '',
+      message: error?.message || 'Unknown Zoho API error',
+      requestId: ''
+    };
+  }
+
+  const status = Number(error.response?.status || 0);
+  const data = error.response?.data;
+  const headers = error.response?.headers || {};
+  const code = String(data?.code || data?.error?.code || data?.error || '').trim();
+  const message = String(
+    data?.message ||
+      data?.error_description ||
+      data?.error?.message ||
+      error.message ||
+      'Zoho API request failed'
+  ).trim();
+  const requestId = String(headers['x-request-id'] || headers['request-id'] || '').trim();
+
+  return {
+    status,
+    code,
+    message,
+    requestId
+  };
+}
+
+function previewValue(value, visible = 4) {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return '';
+  }
+  if (normalized.length <= visible * 2) {
+    return normalized;
+  }
+  return `${normalized.slice(0, visible)}***${normalized.slice(-visible)}`;
+}
+
 function ensureZohoCredentials() {
   if (!config.zoho.portalId) {
     throw new Error('Missing Zoho credentials. Configure ZOHO_PORTAL_ID in .env');
@@ -1507,11 +1549,165 @@ async function postTaskComment(projectRef, taskId, content) {
   throw new Error(toZohoErrorMessage(lastError));
 }
 
+async function runZohoDiagnostics(options = {}) {
+  const writeProbe = String(options.writeProbe || '').toLowerCase() === 'true' || options.writeProbe === true;
+  const projectId = String(options.projectId || '').trim();
+  const taskId = String(options.taskId || '').trim();
+
+  const diagnostics = {
+    timestamp: new Date().toISOString(),
+    configuration: {
+      enabled: !config.zoho.useMock,
+      useMock: Boolean(config.zoho.useMock),
+      portalIdConfigured: Boolean(config.zoho.portalId),
+      portalIdPreview: previewValue(config.zoho.portalId, 3),
+      baseUrl: String(config.zoho.baseUrl || ''),
+      accountsBaseUrl: String(config.zoho.accountsBaseUrl || ''),
+      accessTokenConfigured: Boolean(currentAccessToken || config.zoho.accessToken),
+      refreshTokenConfigured: Boolean(config.zoho.refreshToken),
+      clientIdConfigured: Boolean(config.zoho.clientId),
+      clientSecretConfigured: Boolean(config.zoho.clientSecret),
+      projectsEndpoint: String(config.zoho.projectsEndpoint || '')
+    },
+    token: {
+      ok: false,
+      refreshed: false,
+      accessTokenPreview: '',
+      error: null
+    },
+    readProbe: {
+      ok: false,
+      projectCount: 0,
+      sampleProject: null,
+      error: null
+    },
+    writeProbe: {
+      performed: writeProbe,
+      ok: false,
+      projectId,
+      taskId,
+      createdCommentId: '',
+      error: null
+    },
+    hints: [],
+    summary: {
+      status: 'needs_attention',
+      readyForTaskComments: false
+    }
+  };
+
+  if (config.zoho.useMock) {
+    diagnostics.hints.push('ZOHO_USE_MOCK=true. Switch to live mode to validate real Zoho token and task comment permissions.');
+    return diagnostics;
+  }
+
+  if (!diagnostics.configuration.portalIdConfigured) {
+    diagnostics.hints.push('Set ZOHO_PORTAL_ID in the environment.');
+  }
+
+  if (!diagnostics.configuration.accessTokenConfigured && !hasRefreshCredentials()) {
+    diagnostics.hints.push(
+      'Provide ZOHO_ACCESS_TOKEN or configure ZOHO_REFRESH_TOKEN, ZOHO_CLIENT_ID, and ZOHO_CLIENT_SECRET.'
+    );
+    return diagnostics;
+  }
+
+  if (hasRefreshCredentials()) {
+    try {
+      const token = await refreshZohoAccessToken();
+      diagnostics.token.ok = true;
+      diagnostics.token.refreshed = true;
+      diagnostics.token.accessTokenPreview = previewValue(token, 6);
+    } catch (error) {
+      diagnostics.token.error = toZohoErrorObject(error);
+      diagnostics.hints.push(
+        'Zoho token refresh failed. Verify refresh token, client ID/secret, and accounts domain (zoho.in vs zoho.com).'
+      );
+      if (diagnostics.token.error?.status === 401) {
+        diagnostics.hints.push('401 usually means the refresh token is stale, revoked, or tied to different app/domain credentials.');
+      }
+      return diagnostics;
+    }
+  } else {
+    try {
+      await ensureZohoCredentials();
+      diagnostics.token.ok = true;
+      diagnostics.token.refreshed = false;
+      diagnostics.token.accessTokenPreview = previewValue(currentAccessToken, 6);
+    } catch (error) {
+      diagnostics.token.error = toZohoErrorObject(error);
+      diagnostics.hints.push('Zoho access token is missing or invalid and refresh credentials are not fully configured.');
+      return diagnostics;
+    }
+  }
+
+  try {
+    const projects = await getProjects('');
+    diagnostics.readProbe.ok = true;
+    diagnostics.readProbe.projectCount = Array.isArray(projects) ? projects.length : 0;
+    diagnostics.readProbe.sampleProject = Array.isArray(projects) && projects.length
+      ? {
+          id: String(projects[0]?.id || ''),
+          name: String(projects[0]?.name || ''),
+          stage: String(projects[0]?.stage || '')
+        }
+      : null;
+  } catch (error) {
+    diagnostics.readProbe.error = toZohoErrorObject(error);
+    diagnostics.hints.push('Project read probe failed. Confirm portal ID, API base URL, and token region match.');
+    return diagnostics;
+  }
+
+  if (writeProbe) {
+    if (!projectId || !taskId) {
+      diagnostics.hints.push('Provide projectId and taskId when requesting a Zoho write probe.');
+      return diagnostics;
+    }
+
+    try {
+      const probe = await postTaskComment(
+        projectId,
+        taskId,
+        `[ETPL_AI M.O.M Diagnostics] Comment write probe at ${new Date().toISOString()}`
+      );
+      diagnostics.writeProbe.ok = true;
+      diagnostics.writeProbe.createdCommentId = String(probe?.id || '').trim();
+    } catch (error) {
+      diagnostics.writeProbe.error = toZohoErrorObject(error);
+      diagnostics.hints.push(
+        'Zoho task comment write probe failed. Ensure ZohoProjects.tasks.CREATE is granted and the selected task belongs to the selected project.'
+      );
+      if (diagnostics.writeProbe.error?.status === 403) {
+        diagnostics.hints.push('403 indicates missing task-create scope or insufficient portal/task permissions for this OAuth token.');
+      }
+      if (diagnostics.writeProbe.error?.status === 401) {
+        diagnostics.hints.push('401 during write probe means the running app is still using stale token data or the refresh credentials are not accepted.');
+      }
+      return diagnostics;
+    }
+  }
+
+  diagnostics.summary.readyForTaskComments = Boolean(
+    diagnostics.configuration.enabled &&
+      diagnostics.token.ok &&
+      diagnostics.readProbe.ok &&
+      (!writeProbe || diagnostics.writeProbe.ok)
+  );
+  diagnostics.summary.status = diagnostics.summary.readyForTaskComments ? 'healthy' : 'needs_attention';
+
+  if (!diagnostics.summary.readyForTaskComments && diagnostics.hints.length === 0) {
+    diagnostics.hints.push('Zoho diagnostics completed with issues. Review token, read probe, and write probe results.');
+  }
+
+  return diagnostics;
+}
+
 module.exports = {
   getProjects,
   getPortalUsers,
   getProjectUsers,
   getProjectClientUsers,
   getProjectTasks,
-  postTaskComment
+  postTaskComment,
+  runZohoDiagnostics
 };

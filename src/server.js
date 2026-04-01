@@ -9,7 +9,8 @@ const {
   getProjectUsers,
   getProjectClientUsers,
   getProjectTasks,
-  postTaskComment
+  postTaskComment,
+  runZohoDiagnostics
 } = require('./zohoClient');
 const { sanitizeMomPayload, validateMomPayload } = require('./momTemplate');
 const { generateMomPdf } = require('./pdfService');
@@ -503,6 +504,30 @@ app.get('/api/graph/diagnostics', async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Graph diagnostics failed.'
+    });
+  }
+});
+
+app.get('/api/zoho/diagnostics', async (req, res) => {
+  const writeProbe = String(req.query.writeProbe || '').toLowerCase() === 'true';
+  const projectId = String(req.query.projectId || '').trim();
+  const taskId = String(req.query.taskId || '').trim();
+
+  try {
+    const diagnostics = await runZohoDiagnostics({
+      writeProbe,
+      projectId,
+      taskId
+    });
+
+    res.json({
+      success: true,
+      diagnostics
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Zoho diagnostics failed.'
     });
   }
 });
