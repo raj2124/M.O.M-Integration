@@ -295,11 +295,27 @@
                 <div class="assistant-actions">
                   <input
                     id="assistantDocumentInput"
-                    class="assistant-file-input"
+                    class="assistant-file-input hidden"
                     type="file"
                     accept=".pdf,image/png,image/jpeg,image/jpg,image/webp"
                   />
-                  <button id="assistantScanBtn" class="btn btn-primary" type="button">Scan & Autofill</button>
+                  <input
+                    id="assistantCameraInput"
+                    class="assistant-file-input hidden"
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                  />
+                  <div class="assistant-action-buttons">
+                    <button id="assistantChooseFileBtn" class="btn btn-light assistant-picker-btn" type="button">
+                      Upload File
+                    </button>
+                    <button id="assistantUseCameraBtn" class="btn btn-light assistant-picker-btn" type="button">
+                      Use Camera
+                    </button>
+                    <button id="assistantScanBtn" class="btn btn-primary" type="button">Scan & Autofill</button>
+                  </div>
+                  <p id="assistantSelectedFile" class="assistant-selected-file">No file selected yet.</p>
                 </div>
               </div>
               <div class="assistant-status-row">

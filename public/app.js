@@ -72,6 +72,10 @@ const taskTableBody = document.querySelector('#taskTable tbody');
 const attendeeTableBody = document.querySelector('#attendeeTable tbody');
 const assistantDocumentInput = document.getElementById('assistantDocumentInput');
 const assistantScanBtn = document.getElementById('assistantScanBtn');
+const assistantCameraInput = document.getElementById('assistantCameraInput');
+const assistantChooseFileBtn = document.getElementById('assistantChooseFileBtn');
+const assistantUseCameraBtn = document.getElementById('assistantUseCameraBtn');
+const assistantSelectedFile = document.getElementById('assistantSelectedFile');
 const assistantStatusBadge = document.getElementById('assistantStatusBadge');
 const assistantStatusText = document.getElementById('assistantStatusText');
 const assistantResults = document.getElementById('assistantResults');
@@ -135,6 +139,7 @@ let pendingMobileBodyText = '';
 let pendingMobilePdfUrl = '';
 let pendingMobilePdfAction = 'open';
 let assistantScanInFlight = false;
+let assistantSelectedUpload = null;
 
 function showToast(message, type = 'success') {
   toast.textContent = message;
@@ -828,6 +833,24 @@ function splitAssistantBulletLines(value = '') {
     .filter(Boolean);
 }
 
+function setAssistantSelectedFile(file, source = '') {
+  assistantSelectedUpload = file || null;
+
+  if (!assistantSelectedFile) {
+    return;
+  }
+
+  if (!file) {
+    assistantSelectedFile.textContent = 'No file selected yet.';
+    assistantSelectedFile.classList.remove('has-file');
+    return;
+  }
+
+  const originLabel = source === 'camera' ? 'Captured' : 'Selected';
+  assistantSelectedFile.textContent = `${originLabel}: ${file.name}`;
+  assistantSelectedFile.classList.add('has-file');
+}
+
 function renderAssistantResults(data = {}) {
   if (!assistantResults || !assistantAgendaPreview || !assistantDiscussionPreview || !assistantActionItemsPreview) {
     return;
@@ -866,7 +889,7 @@ async function runAssistantScan() {
     return;
   }
 
-  const file = assistantDocumentInput?.files?.[0];
+  const file = assistantSelectedUpload || assistantDocumentInput?.files?.[0] || assistantCameraInput?.files?.[0];
   if (!file) {
     setAssistantStatus('error', 'Please choose a PDF or image before scanning.');
     showToast('Please choose a PDF or image before scanning.', 'error');
@@ -1049,6 +1072,10 @@ function resetFormForNewSheet() {
   if (assistantDocumentInput) {
     assistantDocumentInput.value = '';
   }
+  if (assistantCameraInput) {
+    assistantCameraInput.value = '';
+  }
+  setAssistantSelectedFile(null);
   renderAssistantResults({});
   setAssistantStatus('ready', 'Upload a meeting document to begin.');
   document.getElementById('organizationAddress').value =
@@ -2464,14 +2491,42 @@ closeProjectModal.addEventListener('click', () => {
 addAgendaRowBtn.addEventListener('click', () => addAgendaRow());
 addTaskRowBtn.addEventListener('click', () => addTaskRow());
 addAttendeeRowBtn.addEventListener('click', () => addAttendeeRow());
+assistantChooseFileBtn?.addEventListener('click', () => {
+  assistantDocumentInput?.click();
+});
+
+assistantUseCameraBtn?.addEventListener('click', () => {
+  assistantCameraInput?.click();
+});
+
 assistantDocumentInput?.addEventListener('change', () => {
-  const file = assistantDocumentInput.files?.[0];
+  const file = assistantDocumentInput.files?.[0] || null;
   if (!file) {
+    setAssistantSelectedFile(null);
     setAssistantStatus('ready', 'Upload a meeting document to begin.');
     return;
   }
+  if (assistantCameraInput) {
+    assistantCameraInput.value = '';
+  }
+  setAssistantSelectedFile(file, 'file');
   setAssistantStatus('ready', `Selected "${file.name}". Click Scan & Autofill to extract agenda points.`);
 });
+
+assistantCameraInput?.addEventListener('change', () => {
+  const file = assistantCameraInput.files?.[0] || null;
+  if (!file) {
+    setAssistantSelectedFile(null);
+    setAssistantStatus('ready', 'Upload a meeting document to begin.');
+    return;
+  }
+  if (assistantDocumentInput) {
+    assistantDocumentInput.value = '';
+  }
+  setAssistantSelectedFile(file, 'camera');
+  setAssistantStatus('ready', `Captured "${file.name}". Click Scan & Autofill to extract agenda points.`);
+});
+
 assistantScanBtn?.addEventListener('click', () => {
   runAssistantScan();
 });
