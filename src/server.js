@@ -4,7 +4,13 @@ const express = require('express');
 const multer = require('multer');
 
 const config = require('./config');
-const { getProjects, getProjectUsers, getProjectClientUsers, getProjectTasks } = require('./zohoClient');
+const {
+  getProjects,
+  getProjectUsers,
+  getProjectClientUsers,
+  getProjectTasks,
+  postTaskComment
+} = require('./zohoClient');
 const { sanitizeMomPayload, validateMomPayload } = require('./momTemplate');
 const { generateMomPdf } = require('./pdfService');
 const { createRecordsStore } = require('./recordsStore');
@@ -143,6 +149,94 @@ function getProjectRefForEmailSubject(mom) {
   }
   const projectName = String(mom.projectName || '').trim();
   return projectName || 'Project';
+}
+
+function getZohoCommentTargetTasks(mom) {
+  const rows = Array.isArray(mom?.taskRows) ? mom.taskRows : [];
+  return rows
+    .map((row, index) => ({
+      index,
+      srNo: String(row?.srNo || index + 1).trim(),
+      taskId: String(row?.taskId || '').trim(),
+      taskName: String(row?.taskName || '').trim(),
+      quantityDescription: String(row?.quantityDescription || '').trim(),
+      remarks: String(row?.remarks || '').trim(),
+      status: String(row?.status || '').trim()
+    }))
+    .filter((row) => row.taskId);
+}
+
+function buildZohoTaskCommentBody({ mom, pdfAbsoluteUrl, authenticity, task }) {
+  const lines = [
+    'Minutes of Meeting (M.O.M) generated from ETPL_AI M.O.M System.',
+    '',
+    `Document ID: ${String(authenticity?.documentId || '').trim() || '-'}`,
+    `Project: ${String(mom.projectNoWorkOrderNo || mom.projectName || '').trim() || '-'}`,
+    `Task: ${String(task?.taskName || task?.taskId || '').trim() || '-'}`,
+    `Meeting Title: ${String(mom.meetingTitle || '').trim() || '-'}`,
+    `Meeting Date: ${String(mom.meetingDate || '').trim() || '-'}`,
+    `Meeting Time: ${String(mom.meetingTime || '').trim() || '-'}`,
+    `Meeting Location: ${String(mom.meetingLocation || '').trim() || '-'}`,
+    '',
+    'M.O.M PDF Link:',
+    String(pdfAbsoluteUrl || '').trim(),
+    '',
+    'Please review the linked M.O.M document for complete details.'
+  ];
+
+  if (String(task?.quantityDescription || '').trim()) {
+    lines.splice(8, 0, `Task Notes: ${String(task.quantityDescription).trim()}`);
+  }
+  if (String(task?.remarks || '').trim()) {
+    lines.splice(9, 0, `Remarks: ${String(task.remarks).trim()}`);
+  }
+  if (String(task?.status || '').trim()) {
+    lines.splice(10, 0, `M.O.M Task Status: ${String(task.status).trim()}`);
+  }
+
+  return lines.join('\n');
+}
+
+async function syncMomLinkToZohoTasks({ mom, pdfAbsoluteUrl, authenticity }) {
+  const projectSource = String(mom?.projectSource || '').trim().toLowerCase();
+  if (projectSource !== 'zoho') {
+    return {
+      attempted: false,
+      syncedTasks: [],
+      skippedReason: 'Project source is not Zoho.'
+    };
+  }
+
+  const zohoProjectId = String(mom?.zohoProjectId || '').trim();
+  if (!zohoProjectId) {
+    throw new Error('Zoho project ID is missing. Please re-select the Zoho project before submitting.');
+  }
+
+  const targetTasks = getZohoCommentTargetTasks(mom);
+  if (!targetTasks.length) {
+    throw new Error(
+      'At least one Zoho task must be selected in the Tasks section. The M.O.M link is posted automatically to selected Zoho tasks.'
+    );
+  }
+
+  const syncedTasks = [];
+  for (const task of targetTasks) {
+    const content = buildZohoTaskCommentBody({ mom, pdfAbsoluteUrl, authenticity, task });
+    const comment = await postTaskComment(zohoProjectId, task.taskId, content);
+    syncedTasks.push({
+      taskId: task.taskId,
+      taskName: task.taskName,
+      srNo: task.srNo,
+      commentId: String(comment?.id || '').trim(),
+      syncedAt: new Date().toISOString(),
+      status: 'comment_posted'
+    });
+  }
+
+  return {
+    attempted: true,
+    syncedTasks
+  };
 }
 
 function formatMeetingDateForSubject(rawDate) {
@@ -678,9 +772,33 @@ app.post('/api/mom/submit', async (req, res) => {
       });
     }
 
+    if (String(mom.projectSource || '').trim().toLowerCase() === 'zoho') {
+      if (!String(mom.zohoProjectId || '').trim()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Zoho project is missing. Please re-select the Zoho project before submitting.'
+        });
+      }
+
+      if (!getZohoCommentTargetTasks(mom).length) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'At least one Zoho task must be selected in the Tasks section. The M.O.M link is posted automatically to selected Zoho tasks.'
+        });
+      }
+    }
+
     const authenticity = buildAuthenticityMetadata();
     const { fileName } = await generateMomPdf(mom, config.app.generatedDir, authenticity);
     const pdfUrl = `/generated-pdfs/${fileName}`;
+    const pdfAbsoluteUrl = buildAbsolutePdfUrl(pdfUrl, req);
+
+    const zohoTaskCommentSync = await syncMomLinkToZohoTasks({
+      mom,
+      pdfAbsoluteUrl,
+      authenticity
+    });
 
     let emailDraft = null;
     if (options.sendEmail) {
@@ -702,6 +820,10 @@ app.post('/api/mom/submit', async (req, res) => {
       meetingDate: mom.meetingDate,
       meetingTime: mom.meetingTime,
       meetingLocation: mom.meetingLocation,
+      projectSource: mom.projectSource,
+      zohoProjectId: mom.zohoProjectId,
+      taskRows: mom.taskRows,
+      zohoTaskCommentSync: zohoTaskCommentSync.syncedTasks,
       output: {
         generatePdf: Boolean(options.generatePdf),
         printPdf: Boolean(options.printPdf),
@@ -709,7 +831,7 @@ app.post('/api/mom/submit', async (req, res) => {
       },
       pdfUrl,
       pdfFileName: fileName,
-      pdfAbsoluteUrl: buildAbsolutePdfUrl(pdfUrl, req)
+      pdfAbsoluteUrl
     });
     purgeRemovedRecordPdfs(removed);
 
@@ -719,11 +841,12 @@ app.post('/api/mom/submit', async (req, res) => {
       result: {
         pdfUrl,
         pdfFileName: fileName,
-        pdfAbsoluteUrl: buildAbsolutePdfUrl(pdfUrl, req),
+        pdfAbsoluteUrl,
         authenticity,
         emailSent: false,
         emailDraft,
         printRequested: Boolean(options.printPdf),
+        zohoTaskCommentSync,
         record
       }
     });

@@ -1144,6 +1144,14 @@ function applyZohoProjectByKey(projectKey) {
   });
 }
 
+function getSelectedZohoProject() {
+  const projectKey = String(zohoProjectSelect?.value || '').trim();
+  if (!projectKey) {
+    return null;
+  }
+  return cachedZohoProjects.find((item) => item._key === projectKey) || null;
+}
+
 async function fetchProjects(query = '') {
   const response = await fetch(`/api/zoho/projects?query=${encodeURIComponent(query)}`);
   const data = await response.json();
@@ -2126,7 +2134,10 @@ function collectAttendeeRows() {
 
 function collectMomPayload() {
   normalizeDateTimeFields();
+  const selectedZohoProject = activeProjectSource === 'zoho' ? getSelectedZohoProject() : null;
   return {
+    projectSource: activeProjectSource,
+    zohoProjectId: String(selectedZohoProject?.id || '').trim(),
     meetingTitle: document.getElementById('meetingTitle').value,
     projectName: projectNameInput.value,
     projectNoWorkOrderNo: projectNoInput.value,
@@ -2831,6 +2842,28 @@ confirmSubmitBtn.addEventListener('click', async () => {
   const mom = collectMomPayload();
   const options = collectSubmitOptions();
 
+  if (mom.projectSource === 'zoho') {
+    const selectedTaskRows = Array.isArray(mom.taskRows) ? mom.taskRows.filter((row) => String(row.taskId || '').trim()) : [];
+    if (!mom.zohoProjectId) {
+      showToast('Please re-select the Zoho project before submitting.', 'error');
+      return;
+    }
+    if (!selectedTaskRows.length) {
+      showToast(
+        'Please select at least one Zoho task in the Tasks section. The M.O.M link is posted automatically to selected Zoho tasks.',
+        'error'
+      );
+      return;
+    }
+
+    const approved = window.confirm(
+      'This M.O.M sheet link will automatically be pasted into the selected Zoho project task comments. Please check and verify all details carefully before continuing.'
+    );
+    if (!approved) {
+      return;
+    }
+  }
+
   if (!options.generatePdf && !options.printPdf && !options.sendEmail) {
     showToast('Please select at least one submit option.', 'error');
     return;
@@ -2868,7 +2901,14 @@ confirmSubmitBtn.addEventListener('click', async () => {
       deliveryModal.close();
     }
     renderAuthenticityLine(result.authenticity || null);
-    showToast('M.O.M submitted successfully.');
+    const syncedCount = Array.isArray(result.zohoTaskCommentSync?.syncedTasks)
+      ? result.zohoTaskCommentSync.syncedTasks.length
+      : 0;
+    if (mom.projectSource === 'zoho' && syncedCount) {
+      showToast(`M.O.M submitted successfully. Zoho task comments updated for ${syncedCount} task(s).`);
+    } else {
+      showToast('M.O.M submitted successfully.');
+    }
     incrementSubmittedCount();
 
     const pdfAbsoluteUrl = String(result.pdfAbsoluteUrl || '').trim() || (pdfUrl ? new URL(pdfUrl, window.location.origin).toString() : '');

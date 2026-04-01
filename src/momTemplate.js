@@ -16,6 +16,8 @@ function sanitizeMomPayload(payload) {
   const meetingType = toArray(payload.meetingType).map(sanitizeString).filter(Boolean);
 
   return {
+    projectSource: sanitizeString(payload.projectSource),
+    zohoProjectId: sanitizeString(payload.zohoProjectId),
     meetingTitle: sanitizeString(payload.meetingTitle),
     projectName: sanitizeString(payload.projectName),
     projectNoWorkOrderNo: sanitizeString(payload.projectNoWorkOrderNo),

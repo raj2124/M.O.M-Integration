@@ -117,6 +117,10 @@ function createRecordsStore(config) {
       meetingDate: String(input.meetingDate || '').trim(),
       meetingTime: String(input.meetingTime || '').trim(),
       meetingLocation: String(input.meetingLocation || '').trim(),
+      projectSource: String(input.projectSource || '').trim(),
+      zohoProjectId: String(input.zohoProjectId || '').trim(),
+      taskRows: Array.isArray(input.taskRows) ? input.taskRows : [],
+      zohoTaskCommentSync: Array.isArray(input.zohoTaskCommentSync) ? input.zohoTaskCommentSync : [],
       output: {
         generatePdf: Boolean(input.output?.generatePdf),
         printPdf: Boolean(input.output?.printPdf),

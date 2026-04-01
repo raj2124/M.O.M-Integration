@@ -793,6 +793,33 @@ async function requestZohoGet(url, params = {}, allowRetry = true) {
   }
 }
 
+async function requestZohoPost(url, data = {}, params = {}, allowRetry = true) {
+  const formData = new URLSearchParams();
+  Object.entries(data || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null) {
+      return;
+    }
+    formData.append(key, String(value));
+  });
+
+  try {
+    return await axios.post(url, formData, {
+      headers: {
+        Authorization: `Zoho-oauthtoken ${currentAccessToken}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      params,
+      timeout: 15000
+    });
+  } catch (error) {
+    if (allowRetry && isAxiosStatus(error, 401) && hasRefreshCredentials()) {
+      await refreshZohoAccessToken();
+      return requestZohoPost(url, data, params, false);
+    }
+    throw error;
+  }
+}
+
 async function fetchProjectDetailFromZoho(projectId) {
   await ensureZohoCredentials();
   const projectBase = buildZohoProjectsBasePath();
@@ -1410,10 +1437,81 @@ async function getProjectTasks(projectRef, options = {}) {
   return fetchProjectTasksFromZoho(resolvedId, options);
 }
 
+async function postTaskComment(projectRef, taskId, content) {
+  const normalizedProjectRef = String(projectRef || '').trim();
+  const normalizedTaskId = String(taskId || '').trim();
+  const normalizedContent = String(content || '').trim();
+
+  if (!normalizedProjectRef) {
+    throw new Error('Project ID is required to post a Zoho task comment.');
+  }
+  if (!normalizedTaskId) {
+    throw new Error('Task ID is required to post a Zoho task comment.');
+  }
+  if (!normalizedContent) {
+    throw new Error('Comment content is required to post a Zoho task comment.');
+  }
+
+  if (config.zoho.useMock) {
+    return {
+      id: `mock-comment-${normalizedTaskId}-${Date.now()}`,
+      content: normalizedContent,
+      taskId: normalizedTaskId
+    };
+  }
+
+  await ensureZohoCredentials();
+  const resolvedProjectId = await resolveProjectReferenceToId(normalizedProjectRef);
+  const restBase = buildZohoProjectsBasePath();
+  const v3Base = restBase.replace(/\/restapi\/portal\//, '/api/v3/portal/');
+  const candidates = [
+    {
+      url: `${restBase}/${resolvedProjectId}/tasks/${normalizedTaskId}/comments/`,
+      body: { content: normalizedContent }
+    },
+    {
+      url: `${restBase}/${resolvedProjectId}/tasks/${normalizedTaskId}/comments`,
+      body: { content: normalizedContent }
+    },
+    {
+      url: `${v3Base}/${resolvedProjectId}/tasks/${normalizedTaskId}/comments/`,
+      body: { comment: normalizedContent }
+    },
+    {
+      url: `${v3Base}/${resolvedProjectId}/tasks/${normalizedTaskId}/comments`,
+      body: { comment: normalizedContent }
+    }
+  ];
+
+  let lastError = null;
+  for (const candidate of candidates) {
+    try {
+      const response = await requestZohoPost(candidate.url, candidate.body, {}, true);
+      const comments = Array.isArray(response?.data?.comments) ? response.data.comments : [];
+      const comment = comments[0] || response?.data?.comment || {};
+
+      return {
+        id: String(comment.id_string || comment.id || '').trim(),
+        content: String(comment.content || comment.comment || normalizedContent).trim(),
+        taskId: normalizedTaskId,
+        projectId: resolvedProjectId
+      };
+    } catch (error) {
+      lastError = error;
+      if (!isAxiosStatus(error, 400) && !isAxiosStatus(error, 404)) {
+        throw new Error(toZohoErrorMessage(error));
+      }
+    }
+  }
+
+  throw new Error(toZohoErrorMessage(lastError));
+}
+
 module.exports = {
   getProjects,
   getPortalUsers,
   getProjectUsers,
   getProjectClientUsers,
-  getProjectTasks
+  getProjectTasks,
+  postTaskComment
 };
