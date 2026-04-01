@@ -64,6 +64,12 @@ const config = {
     baseUrl: process.env.MS_GRAPH_BASE_URL || 'https://graph.microsoft.com/v1.0',
     scope: process.env.MS_GRAPH_SCOPE || 'https://graph.microsoft.com/.default',
     openGraphWebLink: toBool(process.env.MS_GRAPH_OPEN_WEBLINK, false)
+  },
+  gemini: {
+    enabled: toBool(process.env.GEMINI_ENABLED, true),
+    apiKey: process.env.GEMINI_API_KEY || '',
+    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    maxUploadBytes: Number.parseInt(process.env.GEMINI_MAX_UPLOAD_BYTES || '15728640', 10)
   }
 };
 

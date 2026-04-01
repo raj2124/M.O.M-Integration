@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
+const multer = require('multer');
 
 const config = require('./config');
 const { getProjects, getProjectUsers, getProjectClientUsers, getProjectTasks } = require('./zohoClient');
@@ -13,9 +14,16 @@ const {
   createGraphDraft,
   runGraphDiagnostics
 } = require('./graphMailService');
+const { scanMeetingDocumentWithGemini } = require('./geminiAssistant');
 
 const app = express();
 const recordsStore = createRecordsStore(config);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: config.gemini.maxUploadBytes
+  }
+});
 const DIGITAL_DECLARATION_STATEMENT =
   'This Minutes of Meeting (M.O.M) is a digitally generated record of meeting discussions and outcomes. It is produced from system-captured inputs and therefore does not require a handwritten signature for verification.';
 
@@ -503,6 +511,56 @@ app.get('/api/mom/records', (req, res) => {
   }
 });
 
+app.post('/upload', upload.single('document'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please choose a document to scan.'
+      });
+    }
+
+    const extracted = await scanMeetingDocumentWithGemini(config, req.file);
+
+    return res.json({
+      success: true,
+      agenda: extracted.agenda,
+      discussion: extracted.discussion,
+      action_items: extracted.action_items
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to scan meeting document.'
+    });
+  }
+});
+
+app.post('/api/upload', upload.single('document'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please choose a document to scan.'
+      });
+    }
+
+    const extracted = await scanMeetingDocumentWithGemini(config, req.file);
+
+    return res.json({
+      success: true,
+      agenda: extracted.agenda,
+      discussion: extracted.discussion,
+      action_items: extracted.action_items
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to scan meeting document.'
+    });
+  }
+});
+
 app.delete('/api/mom/records/:recordId', (req, res) => {
   try {
     const recordId = String(req.params.recordId || '').trim();
@@ -530,6 +588,24 @@ app.delete('/api/mom/records/:recordId', (req, res) => {
       message: error.message || 'Failed to delete M.O.M record.'
     });
   }
+});
+
+app.use((error, _req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        message: `File is too large. Maximum allowed size is ${Math.round(config.gemini.maxUploadBytes / (1024 * 1024))} MB.`
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Upload failed.'
+    });
+  }
+
+  return next(error);
 });
 
 app.post('/api/mom/records/:recordId/email-draft', async (req, res) => {

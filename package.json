@@ -13,9 +13,11 @@
     "dev:electroreports": "cd electroreports && node src/server.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "multer": "^2.1.1",
     "nodemailer": "^6.9.16",
     "openai": "^6.32.0",
     "pdfkit": "^0.16.0"

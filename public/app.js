@@ -70,6 +70,14 @@ const addAttendeeRowBtn = document.getElementById('addAttendeeRowBtn');
 const agendaTableBody = document.querySelector('#agendaTable tbody');
 const taskTableBody = document.querySelector('#taskTable tbody');
 const attendeeTableBody = document.querySelector('#attendeeTable tbody');
+const assistantDocumentInput = document.getElementById('assistantDocumentInput');
+const assistantScanBtn = document.getElementById('assistantScanBtn');
+const assistantStatusBadge = document.getElementById('assistantStatusBadge');
+const assistantStatusText = document.getElementById('assistantStatusText');
+const assistantResults = document.getElementById('assistantResults');
+const assistantAgendaPreview = document.getElementById('assistantAgendaPreview');
+const assistantDiscussionPreview = document.getElementById('assistantDiscussionPreview');
+const assistantActionItemsPreview = document.getElementById('assistantActionItemsPreview');
 const toast = document.getElementById('toast');
 const authenticityLinePreview = document.getElementById('authenticityLinePreview');
 
@@ -126,6 +134,7 @@ let pendingMobileMailtoUrl = '';
 let pendingMobileBodyText = '';
 let pendingMobilePdfUrl = '';
 let pendingMobilePdfAction = 'open';
+let assistantScanInFlight = false;
 
 function showToast(message, type = 'success') {
   toast.textContent = message;
@@ -799,6 +808,115 @@ function nextIndexFromTable(tbodySelector) {
   return tbody.children.length + 1;
 }
 
+function setAssistantStatus(mode, message) {
+  if (assistantStatusBadge) {
+    assistantStatusBadge.className = `assistant-status-badge tone-${mode}`;
+    assistantStatusBadge.textContent =
+      mode === 'loading' ? 'Scanning' : mode === 'success' ? 'Autofilled' : mode === 'error' ? 'Error' : 'Ready';
+  }
+
+  if (assistantStatusText) {
+    assistantStatusText.textContent = message;
+  }
+}
+
+function splitAssistantBulletLines(value = '') {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .map((line) => line.replace(/^[-*•\d.)\s]+/, '').trim())
+    .filter(Boolean);
+}
+
+function renderAssistantResults(data = {}) {
+  if (!assistantResults || !assistantAgendaPreview || !assistantDiscussionPreview || !assistantActionItemsPreview) {
+    return;
+  }
+
+  const agenda = String(data.agenda || '').trim();
+  const discussion = String(data.discussion || '').trim();
+  const actionItems = String(data.action_items || '').trim();
+
+  assistantAgendaPreview.value = agenda;
+  assistantDiscussionPreview.value = discussion;
+  assistantActionItemsPreview.value = actionItems;
+  assistantResults.classList.toggle('hidden', !agenda && !discussion && !actionItems);
+}
+
+function applyAssistantAgendaAutofill(agendaText = '') {
+  const agendaLines = splitAssistantBulletLines(agendaText);
+  if (!agendaLines.length) {
+    return 0;
+  }
+
+  agendaTableBody.innerHTML = '';
+  agendaLines.forEach((line, index) => {
+    addAgendaRow({
+      srNo: String(index + 1),
+      agenda: line,
+      actionPlan: '',
+      responsibility: ''
+    });
+  });
+  return agendaLines.length;
+}
+
+async function runAssistantScan() {
+  if (assistantScanInFlight) {
+    return;
+  }
+
+  const file = assistantDocumentInput?.files?.[0];
+  if (!file) {
+    setAssistantStatus('error', 'Please choose a PDF or image before scanning.');
+    showToast('Please choose a PDF or image before scanning.', 'error');
+    return;
+  }
+
+  assistantScanInFlight = true;
+  if (assistantScanBtn) {
+    assistantScanBtn.disabled = true;
+    assistantScanBtn.textContent = 'Scanning...';
+  }
+  setAssistantStatus('loading', `Scanning "${file.name}" with Gemini...`);
+
+  try {
+    const formData = new FormData();
+    formData.append('document', file);
+
+    const response = await fetch('/upload', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Scan failed.');
+    }
+
+    renderAssistantResults(data);
+    const filledRows = applyAssistantAgendaAutofill(data.agenda || '');
+    if (!filledRows) {
+      setAssistantStatus('error', 'No agenda points were found in the uploaded document.');
+      showToast('No agenda points were found in the uploaded document.', 'error');
+      return;
+    }
+
+    setAssistantStatus('success', `Gemini extracted ${filledRows} agenda point(s) and filled the Agenda section.`);
+    showToast(`Agenda auto-filled with ${filledRows} extracted point(s).`);
+  } catch (error) {
+    renderAssistantResults({});
+    setAssistantStatus('error', error.message || 'Gemini scan failed.');
+    showToast(error.message || 'Gemini scan failed.', 'error');
+  } finally {
+    assistantScanInFlight = false;
+    if (assistantScanBtn) {
+      assistantScanBtn.disabled = false;
+      assistantScanBtn.textContent = 'Scan & Autofill';
+    }
+  }
+}
+
 function addAgendaRow(row = {}) {
   const tr = document.createElement('tr');
   const index = nextIndexFromTable('#agendaTable tbody');
@@ -928,6 +1046,11 @@ function resetFormForNewSheet() {
   refreshTaskDropdowns();
   renderZohoProjectMeta(null);
   resetRows();
+  if (assistantDocumentInput) {
+    assistantDocumentInput.value = '';
+  }
+  renderAssistantResults({});
+  setAssistantStatus('ready', 'Upload a meeting document to begin.');
   document.getElementById('organizationAddress').value =
     '302, Sangini Aspire, Beside Sanskruti Township Near Pal RTO, Pal-Hajira Road, Pal Gam, Surat, Gujarat - 395009';
   renderAuthenticityLine();
@@ -2341,6 +2464,17 @@ closeProjectModal.addEventListener('click', () => {
 addAgendaRowBtn.addEventListener('click', () => addAgendaRow());
 addTaskRowBtn.addEventListener('click', () => addTaskRow());
 addAttendeeRowBtn.addEventListener('click', () => addAttendeeRow());
+assistantDocumentInput?.addEventListener('change', () => {
+  const file = assistantDocumentInput.files?.[0];
+  if (!file) {
+    setAssistantStatus('ready', 'Upload a meeting document to begin.');
+    return;
+  }
+  setAssistantStatus('ready', `Selected "${file.name}". Click Scan & Autofill to extract agenda points.`);
+});
+assistantScanBtn?.addEventListener('click', () => {
+  runAssistantScan();
+});
 
 momForm.addEventListener('submit', (event) => {
   event.preventDefault();

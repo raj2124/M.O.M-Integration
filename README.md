@@ -9,6 +9,8 @@ Minutes of Meeting web app with Zoho Projects integration, PDF export, print sup
 - Zoho project selection from dropdown while creating a new M.O.M
 - Auto-fill of project fields from Zoho (project name/number and team users where available)
 - Agenda and attendees row management
+- Scan & Autofill (M.O.M Assistant) using Google Gemini for image/PDF agenda extraction
+- Structured AI extraction for agenda, discussion points, and action items
 - PDF generation and browser print flow
 - Microsoft Graph server-side draft creation (with PDF attachment) when configured
 - Outlook compose deeplink fallback when Graph is not configured
@@ -22,6 +24,7 @@ Minutes of Meeting web app with Zoho Projects integration, PDF export, print sup
 ## Project Structure
 
 - `src/server.js` - API and app server
+- `src/geminiAssistant.js` - Gemini multimodal scan and extraction service
 - `src/zohoClient.js` - Zoho Projects integration
 - `src/pdfService.js` - PDF generation
 - `public/index.html` - App UI
@@ -71,6 +74,41 @@ npm run dev
 ```
 
 6. Open `http://localhost:3000`
+
+## Google Gemini M.O.M Assistant Setup
+
+To enable Scan & Autofill:
+
+- Set `GEMINI_ENABLED=true`
+- Set `GEMINI_API_KEY`
+- Optional: set `GEMINI_MODEL` (default: `gemini-2.5-flash`)
+- Optional: set `GEMINI_MAX_UPLOAD_BYTES` (default: `15728640`, about 15 MB)
+
+Supported upload formats:
+
+- PDF
+- PNG
+- JPG / JPEG
+- WEBP
+
+API endpoint used by the feature:
+
+```bash
+POST /upload
+```
+
+The backend returns:
+
+```json
+{
+  "success": true,
+  "agenda": "• Agenda point 1\n• Agenda point 2",
+  "discussion": "• Discussion point 1",
+  "action_items": "• Action item 1"
+}
+```
+
+The frontend automatically uses the extracted `agenda` value to rebuild and fill the Agenda rows in the M.O.M editor.
 
 ## Deployment Notes
 

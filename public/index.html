@@ -282,6 +282,45 @@
               <h2>3. Agenda</h2>
               <button id="addAgendaRowBtn" class="btn btn-light" type="button">Add Agenda Row</button>
             </div>
+            <div class="assistant-panel">
+              <div class="assistant-panel-head">
+                <div>
+                  <p class="assistant-eyebrow">Scan & Autofill</p>
+                  <h3>M.O.M Assistant</h3>
+                  <p class="assistant-copy">
+                    Upload a meeting image or PDF. Gemini will extract agenda, discussion points, and action items,
+                    then auto-fill the agenda section.
+                  </p>
+                </div>
+                <div class="assistant-actions">
+                  <input
+                    id="assistantDocumentInput"
+                    class="assistant-file-input"
+                    type="file"
+                    accept=".pdf,image/png,image/jpeg,image/jpg,image/webp"
+                  />
+                  <button id="assistantScanBtn" class="btn btn-primary" type="button">Scan & Autofill</button>
+                </div>
+              </div>
+              <div class="assistant-status-row">
+                <span id="assistantStatusBadge" class="assistant-status-badge">Ready</span>
+                <span id="assistantStatusText" class="assistant-status-text">Upload a meeting document to begin.</span>
+              </div>
+              <div id="assistantResults" class="assistant-results hidden">
+                <label>
+                  Extracted Agenda
+                  <textarea id="assistantAgendaPreview" rows="5" readonly></textarea>
+                </label>
+                <label>
+                  Discussion Points
+                  <textarea id="assistantDiscussionPreview" rows="5" readonly></textarea>
+                </label>
+                <label>
+                  Action Items
+                  <textarea id="assistantActionItemsPreview" rows="5" readonly></textarea>
+                </label>
+              </div>
+            </div>
             <div class="table-wrap">
               <table id="agendaTable">
                 <thead>
