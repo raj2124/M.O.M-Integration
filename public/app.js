@@ -1784,49 +1784,39 @@ function chooseMobileComposeTargets(emailDraft = {}) {
   const subject = String(emailDraft.subject || '').trim();
   const fullBody = String(emailDraft.body || '').trim();
   const compactBody = buildCompactMobileBody(emailDraft);
-  const compactMailBody = buildCompactMailtoBody(emailDraft);
   const appComposeUrl =
     String(emailDraft.outlookAppComposeUrl || '').trim() ||
     buildOutlookAppComposeUrl({ to, cc, subject, body: fullBody });
-  const fullMailtoUrl = buildMailtoFallbackUrl({
-    to,
-    cc,
-    subject,
-    body: fullBody
-  });
-  if (fullMailtoUrl && fullMailtoUrl.length <= MAX_MOBILE_URL_LENGTH) {
+  const fullBrowserComposeUrl = buildOutlookComposeUrlMobile({ to, cc, subject, body: fullBody });
+
+  if (fullBrowserComposeUrl && fullBrowserComposeUrl.length <= MAX_MOBILE_URL_LENGTH) {
     return {
       appComposeUrl,
-      composeUrl: '',
-      mailtoUrl: fullMailtoUrl,
-      reason: 'Opening mail app with full draft body.'
+      composeUrl: fullBrowserComposeUrl,
+      mailtoUrl: '',
+      reason: 'Opening Outlook compose with the full draft body.'
     };
   }
 
-  const compactMailtoUrl = buildMailtoFallbackUrl({
-    to,
-    cc,
-    subject,
-    body: compactMailBody
-  });
   const compactAppComposeUrl = buildOutlookAppComposeUrl({ to, cc, subject, body: compactBody });
+  const compactBrowserComposeUrl = buildOutlookComposeUrlMobile({ to, cc, subject, body: compactBody });
 
-  if (compactMailtoUrl && compactMailtoUrl.length <= MAX_MOBILE_URL_LENGTH) {
+  if (compactBrowserComposeUrl && compactBrowserComposeUrl.length <= MAX_MOBILE_URL_LENGTH) {
     return {
       appComposeUrl: compactAppComposeUrl,
-      composeUrl: '',
-      mailtoUrl: compactMailtoUrl,
-      reason: 'Full draft is too long for mobile compose. Opening mail app with a compact draft; copy the full body below if needed.'
+      composeUrl: compactBrowserComposeUrl,
+      mailtoUrl: '',
+      reason: 'Full draft is too long for mobile compose. Opening Outlook with a compact draft; copy the full body below if needed.'
     };
   }
 
-  const minimalMailtoUrl = buildMailtoFallbackUrl({
+  const minimalAppComposeUrl = buildOutlookAppComposeUrl({
     to,
     cc,
     subject,
     body: ''
   });
-  const minimalAppComposeUrl = buildOutlookAppComposeUrl({
+  const minimalBrowserComposeUrl = buildOutlookComposeUrlMobile({
     to,
     cc,
     subject,
@@ -1835,9 +1825,9 @@ function chooseMobileComposeTargets(emailDraft = {}) {
 
   return {
     appComposeUrl: minimalAppComposeUrl,
-    composeUrl: '',
-    mailtoUrl: minimalMailtoUrl,
-    reason: 'Full draft is too long for mobile mail compose. Opening minimal compose; paste the full body below manually.'
+    composeUrl: minimalBrowserComposeUrl,
+    mailtoUrl: '',
+    reason: 'Full draft is too long for mobile Outlook compose. Opening minimal Outlook compose; paste the full body below manually.'
   };
 }
 
