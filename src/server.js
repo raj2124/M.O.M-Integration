@@ -33,7 +33,7 @@ const upload = multer({
   }
 });
 const DIGITAL_DECLARATION_STATEMENT =
-  'This Minutes of Meeting (M.O.M) is a digitally generated record of meeting discussions and outcomes. It is produced from system-captured inputs and therefore does not require a handwritten signature for verification.';
+  'This Minutes of Meeting (M.O.M) is electronically generated based on authorized meeting inputs and accurately reflects the discussions, decisions, and action items recorded. It shall be considered valid for official communication and record-keeping without the requirement of a handwritten signature. In case of any discrepancies or required amendments, the recipient is requested to notify us via email for review and necessary updates.';
 
 function pad2(value) {
   return String(value).padStart(2, '0');

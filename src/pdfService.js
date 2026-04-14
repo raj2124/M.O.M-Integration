@@ -25,7 +25,7 @@ const DEFAULT_ORG_ADDRESS =
   '302, Sangini Aspire, Beside Sanskruti Township Near Pal RTO, Pal-Hajira Road, Pal Gam, Surat, Gujarat - 395009';
 
 const DIGITAL_DECLARATION_DEFAULT =
-  'This Minutes of Meeting (M.O.M) is a digitally generated record of meeting discussions and outcomes. It is produced from system-captured inputs and therefore does not require a handwritten signature for verification.';
+  'This Minutes of Meeting (M.O.M) is electronically generated based on authorized meeting inputs and accurately reflects the discussions, decisions, and action items recorded. It shall be considered valid for official communication and record-keeping without the requirement of a handwritten signature. In case of any discrepancies or required amendments, the recipient is requested to notify us via email for review and necessary updates.';
 
 const LOGO_PATH = path.join(__dirname, '..', 'public', 'assets', 'elegrow-logo-full.png');
 
